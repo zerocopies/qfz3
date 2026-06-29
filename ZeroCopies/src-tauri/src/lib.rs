@@ -25,11 +25,11 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
-use z3_quantum_flow::tokenizer::Tokenizer;
-use z3_quantum_flow::loader::MappedModel;
-use z3_quantum_flow::graph::ForwardPass;
-use z3_quantum_flow::generate::{Session, GenerateConfig, run_generation_captured};
-use z3_quantum_flow::gguf::GgufValue;
+use qfz3::tokenizer::Tokenizer;
+use qfz3::loader::MappedModel;
+use qfz3::graph::ForwardPass;
+use qfz3::generate::{Session, GenerateConfig, run_generation_captured};
+use qfz3::gguf::GgufValue;
 use std::collections::HashMap;
 
 // Same metadata-extraction helpers as main.rs, duplicated here because

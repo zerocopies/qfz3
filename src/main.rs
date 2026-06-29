@@ -5,11 +5,11 @@ use std::path::Path;
 use anyhow::{Result, bail};
 
 // Import everything from your Z1 library
-use z3_quantum_flow::loader::MappedModel;
-use z3_quantum_flow::tokenizer::Tokenizer;
-use z3_quantum_flow::graph::ForwardPass;
-use z3_quantum_flow::generate::{generate_turn, Session, GenerateConfig};
-use z3_quantum_flow::gguf::GgufValue;
+use qfz3::loader::MappedModel;
+use qfz3::tokenizer::Tokenizer;
+use qfz3::graph::ForwardPass;
+use qfz3::generate::{generate_turn, Session, GenerateConfig};
+use qfz3::gguf::GgufValue;
 
 // --- Helper Functions (MUST BE OUTSIDE main) ---
 

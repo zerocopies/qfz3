@@ -1,13 +1,13 @@
 fn main() {
     // Look up one level out of z1-core to find the vendor files
-    let llama_dir = std::path::PathBuf::from("../vendor/llama.cpp");
+    let llama_dir = std::path::PathBuf::from("vendor/llama.cpp");
     let ggml_src  = llama_dir.join("ggml/src");
     let ggml_inc  = llama_dir.join("ggml/include");
     let llama_inc = llama_dir.join("include");
 
     if !ggml_src.exists() {
         panic!(
-            "[Z.1] ../vendor/llama.cpp/ggml/src not found!\n\
+            "[Z.1] vendor/llama.cpp/ggml/src not found!\n\
              Make sure the checkout exists at the workspace root repository."
         );
     }
@@ -44,6 +44,6 @@ fn main() {
     c_build.compile("ggml_c");
 
     println!("cargo:rustc-link-lib=static=ggml_c");
-    println!("cargo:rerun-if-changed=../vendor/llama.cpp");
+    println!("cargo:rerun-if-changed=vendor/llama.cpp");
     println!("cargo:rerun-if-changed=build.rs");
 }
