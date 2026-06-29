@@ -8,6 +8,6 @@ BZ_PID=$!
 sleep 2
 curl -s -X POST http://127.0.0.1:7474/load_model \
   -H "Content-Type: application/json" \
-  -d '{"path":"/home/prp/Z3-Quantum-Flow/ai_playground/Qwen2.5-Coder-3B-Instruct-abliterated-Q4_K_M.gguf"}' > /dev/null
+  -d '{"path":"/home/prp/Z3-Quantum-Flow/ai_playground/qwen2.5-coder-1.5b-q4_K_M.gguf"}' > /dev/null
 echo "Ready — open http://127.0.0.1:7474"
 wait $BZ_PID

@@ -8,89 +8,34 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
-  body { background-color: #0b0c10; color: #e8e6f0; overflow: hidden; font-family: 'Inter', sans-serif; }
-  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #3a3c4a; border-radius: 4px; }
-  .mono-stats { font-family: 'JetBrains Mono', monospace; }
-  .screen { display: none; }
-  .screen.active { display: flex; }
-
-  @keyframes levitate {
-    0%, 100% { transform: translateY(0px) rotate(0deg); }
-    25% { transform: translateY(-10px) rotate(1.5deg); }
-    50% { transform: translateY(-4px) rotate(0deg); }
-    75% { transform: translateY(-14px) rotate(-1.5deg); }
-  }
-  @keyframes glow-pulse {
-    0%, 100% { box-shadow: 0 0 15px rgba(74, 144, 226, 0.2), 0 0 40px rgba(74, 144, 226, 0.05); }
-    50% { box-shadow: 0 0 25px rgba(74, 144, 226, 0.4), 0 0 60px rgba(74, 144, 226, 0.1); }
-  }
-  @keyframes float-glow {
-    0%, 100% { filter: drop-shadow(0 8px 12px rgba(74, 144, 226, 0.15)); }
-    50% { filter: drop-shadow(0 18px 24px rgba(126, 87, 194, 0.25)); }
-  }
-  @keyframes float-bob {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-8px); }
-  }
-  .ghost-levitate {
-    animation: levitate 4s ease-in-out infinite, float-glow 3s ease-in-out infinite;
-  }
-  .ghost-border-glow {
-    animation: glow-pulse 3s ease-in-out infinite;
-  }
-  .fade-in-up {
-    animation: fadeInUp 0.5s ease-out forwards;
-    opacity: 0;
-  }
-  @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .bg-grid {
-    background-image:
-      linear-gradient(rgba(74, 144, 226, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(74, 144, 226, 0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
-  .bg-gradient-radial {
-    background: radial-gradient(ellipse at 30% 40%, rgba(126,87,194,0.08) 0%, transparent 60%),
-                radial-gradient(ellipse at 70% 60%, rgba(248,187,208,0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 20%, rgba(74,144,226,0.06) 0%, transparent 50%);
-  }
-  .bg-gradient-soft {
-    background: linear-gradient(145deg, rgba(179,157,219,0.04) 0%, transparent 40%),
-                linear-gradient(225deg, rgba(129,199,132,0.03) 0%, transparent 40%);
-  }
+    body { background-color: #0B0C0E; color: #e3e2e7; overflow: hidden; font-family: 'Inter', sans-serif; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2D2E30; border-radius: 2px; }
+    .mono-stats { font-family: 'JetBrains Mono', monospace; }
+    .screen { display: none; }
+    .screen.active { display: flex; }
 </style>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
     theme: { extend: {
       colors: {
-        "celestial": "#4a90e2",
-        "celestial-dim": "#3a7bc8",
-        "lavender": "#b39ddb",
-        "blush": "#f8bbd0",
-        "sunny": "#fff176",
-        "mystic": "#7e57c2",
-        "mint": "#81c784",
-        "primary": "#b39ddb",
-        "primary-dim": "#9575cd",
-        "on-primary": "#1a1030",
-        "on-surface": "#e8e6f0",
-        "on-surface-variant": "#c4c0d0",
-        "outline": "#9e9ab0",
-        "outline-variant": "#4a4760",
-        "surface": "#13141a",
-        "surface-container-lowest": "#0e0f14",
-        "surface-container-low": "#1c1d26",
-        "surface-container": "#21222e",
-        "surface-container-high": "#2b2c3a",
-        "surface-variant": "#373848",
-        "background": "#0b0c10",
+        "celestial-blue": "#4a90e2",
+        "primary": "#a4c9ff",
+        "on-primary": "#00315d",
+        "on-surface": "#e3e2e7",
+        "on-surface-variant": "#c1c7d3",
+        "outline": "#8b919d",
+        "outline-variant": "#414751",
+        "surface": "#121315",
+        "surface-container-lowest": "#0d0e10",
+        "surface-container-low": "#1b1c1e",
+        "surface-container": "#1f2022",
+        "surface-container-high": "#292a2c",
+        "surface-variant": "#343537",
+        "background": "#0B0C0E",
         "error": "#ffb4ab"
       },
       borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
@@ -113,95 +58,109 @@
   }
 </script>
 </head>
-<body class="h-screen w-full overflow-hidden bg-grid bg-gradient-radial bg-gradient-soft">
+<body class="h-screen w-full overflow-hidden">
 
 <template id="ghost-template">
-  <svg viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path class="ghost-body" d="M25 45C25 31.1929 36.1929 20 50 20C63.8071 20 75 31.1929 75 45V80C75 82.7614 72.7614 85 70 85C67.2386 85 65 82.7614 65 80C65 77.2386 62.7614 75 60 75C57.2386 75 55 77.2386 55 80C55 82.7614 52.7614 85 50 85C47.2386 85 45 82.7614 45 80C45 77.2386 42.7614 75 40 75C37.2386 75 35 77.2386 35 80C35 82.7614 32.7614 85 30 85C27.2386 85 25 82.7614 25 80V45Z"
-      stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle class="ghost-eye-l" cx="40" cy="42" r="4" fill="currentColor"/>
-    <circle class="ghost-eye-r" cx="60" cy="42" r="4" fill="currentColor"/>
-    <circle class="ghost-pupil-l" cx="42" cy="42" r="1.8" fill="#0b0c10"/>
-    <circle class="ghost-pupil-r" cx="62" cy="42" r="1.8" fill="#0b0c10"/>
-    <path class="ghost-brow-l" d="M34 35C37 33 40 33 44 36" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path class="ghost-brow-r" d="M56 36C60 33 63 33 66 35" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path class="ghost-smirk" d="M40 52C44 56 50 57 56 55" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+  <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path class="ghost-path" d="M25 45C25 31.1929 36.1929 20 50 20C63.8071 20 75 31.1929 75 45V70C75 72.7614 72.7614 75 70 75C67.2386 75 65 72.7614 65 70V70C65 67.2386 62.7614 65 60 65C57.2386 65 55 67.2386 55 70V70C55 72.7614 52.7614 75 50 75C47.2386 75 45 72.7614 45 70V70C45 67.2386 42.7614 65 40 65C37.2386 65 35 67.2386 35 70V70C35 72.7614 32.7614 75 30 75C27.2386 75 25 72.7614 25 70V45Z"
+      stroke="#4B4D52" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle class="ghost-eye-l" cx="44" cy="45" r="1.5" fill="#4B4D52"/>
+    <circle class="ghost-eye-r" cx="56" cy="45" r="1.5" fill="#4B4D52"/>
   </svg>
 </template>
 
 <div class="flex h-screen w-full overflow-hidden">
 
-  <main class="flex-1 flex flex-col relative min-w-0 bg-background/70 overflow-hidden">
+  <aside class="hidden md:flex flex-col h-full py-stack-lg w-sidebar_width border-r border-outline-variant bg-surface-container-low">
+    <div class="px-6 mb-8">
+      <div class="flex items-center gap-3 mb-2">
+        <span class="ghost-mark w-6 h-6 inline-block" data-ghost></span>
+        <span class="font-display-z1 text-display-z1 text-on-surface tracking-tighter">Z1</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-1.5 h-1.5 rounded-full" id="node-dot" style="background:#8b919d"></div>
+        <span class="font-body-md text-xs text-on-surface-variant" id="node-status-text">No model loaded</span>
+      </div>
+    </div>
 
-    <header class="flex justify-between items-center px-gutter h-14 w-full border-b border-outline-variant/60 bg-background/40 backdrop-blur-xl z-10">
-      <div class="flex items-center gap-4">
-        <button class="md:hidden p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-all" id="mobile-menu-btn">
-          <span class="material-symbols-outlined">menu</span>
-        </button>
+    <nav class="flex-1 px-3 space-y-1 overflow-y-auto">
+      <a class="flex items-center gap-3 py-2 px-3 rounded text-primary font-semibold bg-primary/10" href="#" id="new-chat-btn">
+        <span class="material-symbols-outlined text-[20px]">add</span>
+        <span class="font-body-md text-body-md">New chat</span>
+      </a>
+      <span class="flex items-center gap-3 py-2 px-3 rounded text-on-surface-variant/35 cursor-default">
+        <span class="material-symbols-outlined text-[20px]">memory</span>
+        <span class="font-body-md text-body-md">Models</span>
+        <span class="ml-auto text-[9px] uppercase tracking-wider text-on-surface-variant/40">soon</span>
+      </span>
+      <span class="flex items-center gap-3 py-2 px-3 rounded text-on-surface-variant/35 cursor-default">
+        <span class="material-symbols-outlined text-[20px]">monitoring</span>
+        <span class="font-body-md text-body-md">Hardware</span>
+        <span class="ml-auto text-[9px] uppercase tracking-wider text-on-surface-variant/40">soon</span>
+      </span>
+
+      <div class="mt-8 px-3">
+        <p class="font-label-caps text-label-caps text-on-surface-variant/50 mb-3 uppercase tracking-widest">Sessions</p>
+        <div id="session-list">
+          <p class="font-body-md text-xs text-on-surface-variant/40 italic px-3">No sessions yet.</p>
+        </div>
+      </div>
+    </nav>
+
+    <div class="px-4 pt-4 border-t border-outline-variant mt-auto">
+      <button class="w-full py-2 border border-outline-variant text-on-surface-variant font-medium text-sm rounded hover:bg-surface-variant hover:text-on-surface transition-all active:scale-[0.98]" id="load-model-btn">
+        Load model
+      </button>
+    </div>  </aside>
+
+  <main class="flex-1 flex flex-col relative min-w-0 bg-background overflow-hidden">
+
+    <header class="flex justify-between items-center px-gutter h-14 w-full border-b border-outline-variant bg-background/50 backdrop-blur-md z-10">
+      <div class="flex items-center gap-6">
         <nav class="hidden md:flex items-center gap-4 font-mono text-meta-mono text-on-surface-variant" id="model-meta-bar">
           <span id="meta-model">no model</span>
         </nav>
       </div>
-      <div class="flex items-center gap-3">
-        <button class="text-on-surface-variant/50 hover:text-blush transition-colors" title="Terminal" id="term-btn">
-          <span class="material-symbols-outlined text-[20px]">terminal</span>
-        </button>
-        <button class="text-on-surface-variant/50 hover:text-mint transition-colors" title="Settings" id="settings-btn">
-          <span class="material-symbols-outlined text-[20px]">settings</span>
-        </button>
+      <div class="flex items-center gap-4">
+        <button class="text-on-surface-variant/35 cursor-default" title="Coming soon"><span class="material-symbols-outlined text-[20px]">terminal</span></button>
+        <button class="text-on-surface-variant/35 cursor-default" title="Coming soon"><span class="material-symbols-outlined text-[20px]">settings</span></button>
       </div>
     </header>
 
     <section id="screen-empty" class="screen active flex-1 flex-col items-center justify-center p-gutter relative">
-      <div class="absolute inset-0 opacity-[0.015] pointer-events-none flex items-center justify-center overflow-hidden">
-        <span class="font-sans font-bold text-[30vw] select-none tracking-tighter uppercase" style="color:#b39ddb;">Z1</span>
+      <div class="absolute inset-0 opacity-[0.02] pointer-events-none flex items-center justify-center overflow-hidden">
+        <span class="font-sans font-bold text-[30vw] select-none tracking-tighter uppercase">Z1</span>
       </div>
-      <div class="max-w-[420px] w-full text-center flex flex-col items-center relative z-10">
-        <div class="mb-stack-lg relative">
-          <div class="w-44 h-44 flex items-center justify-center rounded-full border-2 border-white/20 ghost-border-glow bg-surface-container-low/30 backdrop-blur-sm">
-            <div class="w-28 h-28 text-white/80 ghost-levitate">
-              <span class="ghost-mark w-full h-full inline-block" data-ghost></span>
-            </div>
-          </div>
-          <div class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blush/30 animate-pulse"></div>
-          <div class="absolute -bottom-2 -left-2 w-3 h-3 rounded-full bg-mystic/30 animate-pulse" style="animation-delay:1s;"></div>
+      <div class="max-w-[400px] w-full text-center flex flex-col items-center relative z-10">
+        <div class="mb-stack-lg w-40 h-40 flex items-center justify-center rounded-full border border-outline-variant/30 bg-surface-container-low/20">
+          <span class="ghost-mark w-24 h-24 inline-block opacity-70" data-ghost></span>
         </div>
-        <h1 class="font-headline-md text-headline-md mb-stack-sm flex items-center gap-2 justify-center fade-in-up">
-          <span class="text-on-surface-variant font-normal">inference</span>
-          <span class="font-bold" style="color:#b39ddb;">Z1</span>
+        <h1 class="font-headline-md text-headline-md mb-stack-sm flex items-center gap-2 justify-center">
+          <span class="text-on-surface-variant font-normal">inference</span> <span class="text-primary font-bold">Z1</span>
         </h1>
-        <p class="font-body-lg text-body-md text-on-surface-variant/80 mb-stack-lg max-w-[300px] fade-in-up" style="animation-delay:0.1s;">
-          No model loaded yet. Drop a <span style="color:#81c784;">.gguf</span> path below — mapped, not copied.
+        <p class="font-body-lg text-body-md text-on-surface-variant mb-stack-lg max-w-[280px]">
+          No model currently loaded. Point Z1 at a .gguf file on your disk — it's mapped, not copied.
         </p>
-        <div class="w-full max-w-[360px] flex flex-col gap-3 fade-in-up" style="animation-delay:0.2s;">
-          <div class="relative">
-            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline/50 text-[18px]">folder_open</span>
-            <input type="text" id="model-path-input" placeholder="/home/you/models/llama-3.1-8b.gguf"
-              class="w-full bg-surface-container-low/80 border border-outline-variant/60 rounded-xl pl-10 pr-4 py-3.5 text-sm text-on-surface font-mono focus:border-celestial focus:outline-none focus:ring-1 focus:ring-celestial/30 transition-all placeholder:text-outline/30" />
-          </div>
-          <button class="group relative px-6 py-3.5 rounded-xl font-semibold transition-all active:scale-95 overflow-hidden" id="load-model-btn-2"
-            style="background: linear-gradient(135deg, #4a90e2, #7e57c2); color: white;">
-            <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style="background: linear-gradient(135deg, #7e57c2, #4a90e2);"></div>
-            <div class="flex items-center gap-2 justify-center relative z-10">
-              <span class="material-symbols-outlined text-[18px]">bolt</span>
+        <div class="w-full max-w-[340px] flex flex-col gap-3">
+          <input type="text" id="model-path-input" placeholder="/home/you/models/llama-3.1-8b.gguf"
+            class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-sm text-on-surface font-mono focus:border-celestial-blue focus:outline-none" />
+          <button class="group relative px-6 py-3 bg-primary text-on-primary font-semibold rounded transition-all hover:brightness-110 active:scale-95" id="load-model-btn-2">
+            <div class="flex items-center gap-2 justify-center">
+              <span class="material-symbols-outlined text-[18px]">add_box</span>
               <span class="font-body-md text-sm uppercase tracking-wider">Load model</span>
             </div>
           </button>
-          <p class="text-xs text-on-surface-variant/40">Paste the full path to a .gguf file on this machine — the server reads it directly, nothing uploads.</p>
+          <p class="text-xs text-on-surface-variant/50">Paste the full path to a .gguf file already on this machine — the server reads it directly, nothing uploads.</p>
         </div>
       </div>
     </section>
 
     <section id="screen-loading" class="screen flex-col items-center justify-center p-gutter relative">
-      <div class="max-w-[440px] w-full text-center flex flex-col items-center">
-        <div class="w-24 h-24 flex items-center justify-center rounded-full border-2 border-white/15 ghost-border-glow bg-surface-container-low/30 backdrop-blur-sm mb-stack-lg">
-          <div class="w-16 h-16 text-white/70 ghost-levitate">
-            <span class="ghost-mark w-full h-full inline-block" data-ghost></span>
-          </div>
-        </div>
-        <h2 class="font-headline-md text-headline-md mb-stack-md" style="color:#b39ddb;">Mapping model into memory…</h2>
-        <div class="w-full bg-surface-container-low/80 border border-outline-variant/60 rounded-xl p-5 text-left mono-stats text-meta-mono text-on-surface-variant space-y-1.5" id="load-log">
-          <div class="text-outline/50">$ awaiting model selection…</div>
+      <div class="max-w-[420px] w-full text-center flex flex-col items-center">
+        <span class="ghost-mark w-20 h-20 inline-block mb-stack-lg" data-ghost></span>
+        <h2 class="font-headline-md text-headline-md mb-stack-md">Mapping model into memory…</h2>
+        <div class="w-full bg-surface-container-low border border-outline-variant rounded-lg p-4 text-left mono-stats text-meta-mono text-on-surface-variant space-y-1.5" id="load-log">
+          <div>$ awaiting model selection…</div>
         </div>
       </div>
     </section>
@@ -213,18 +172,17 @@
         </div>
       </div>
 
-      <div class="w-full flex justify-center px-gutter pb-8 pt-4 bg-gradient-to-t from-background/90 via-background/60 to-transparent">
+      <div class="w-full flex justify-center px-gutter pb-8 pt-4 bg-gradient-to-t from-background via-background to-transparent">
         <div class="w-full max-w-[800px] mx-auto relative">
-          <div class="bg-surface-container-low/90 border border-outline-variant/60 rounded-2xl overflow-hidden focus-within:border-celestial/60 focus-within:ring-1 focus-within:ring-celestial/20 transition-all backdrop-blur-sm">
+          <div class="bg-surface-container-low border border-outline-variant rounded-xl overflow-hidden focus-within:border-celestial-blue transition-colors">
             <textarea class="w-full bg-transparent border-none focus:ring-0 text-on-surface font-body-md py-4 px-6 resize-none min-h-[56px] max-h-48" id="chat-input" placeholder="Message Z1…" rows="1"></textarea>
             <div class="flex items-center justify-between px-4 pb-3">
               <div class="flex gap-1">
-                <button class="p-2 hover:bg-surface-variant/60 rounded-lg text-outline/60 hover:text-lavender transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button>
+                <button class="p-2 hover:bg-surface-variant rounded-lg text-outline hover:text-on-surface transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button>
               </div>
               <div class="flex items-center gap-3">
-                <span class="text-meta-mono text-outline/50 uppercase text-[10px] hidden sm:inline mono-stats" id="meta-model-small"></span>
-                <button class="px-5 py-2 rounded-xl flex items-center gap-2 transition-all active:scale-95 font-body-md font-bold text-white" id="send-btn"
-                  style="background: linear-gradient(135deg, #4a90e2, #7e57c2);">
+                <span class="text-meta-mono text-outline uppercase text-[10px] hidden sm:inline mono-stats" id="meta-model-small"></span>
+                <button class="bg-celestial-blue hover:bg-celestial-blue/90 text-white px-5 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95 font-body-md font-bold" id="send-btn">
                   <span>Send</span>
                   <span class="material-symbols-outlined text-[18px]">north_east</span>
                 </button>
@@ -235,67 +193,18 @@
       </div>
     </section>
 
-    <footer class="h-10 px-gutter border-t border-outline-variant/50 flex items-center justify-between bg-surface-container-lowest/80 backdrop-blur-sm">
+    <footer class="h-10 px-gutter border-t border-outline-variant flex items-center justify-between bg-surface-container-lowest">
       <div class="flex items-center gap-4">
         <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full" id="footer-dot" style="background:#9e9ab0"></span>
-          <span class="font-mono text-meta-mono text-on-surface-variant/70" id="footer-status">Offline</span>
+          <span class="w-1.5 h-1.5 rounded-full" id="footer-dot" style="background:#8b919d"></span>
+          <span class="font-mono text-meta-mono text-on-surface-variant" id="footer-status">Offline</span>
         </div>
-        <div class="w-[1px] h-3 bg-outline-variant/40"></div>
-        <span class="font-mono text-meta-mono text-on-surface-variant/40">v1.0.4-stable</span>
+        <div class="w-[1px] h-3 bg-outline-variant"></div>
+        <span class="font-mono text-meta-mono text-on-surface-variant/60">v1.0.4-stable</span>
       </div>
-      <span class="font-mono text-meta-mono text-on-surface-variant/40" id="footer-right"></span>
+      <span class="font-mono text-meta-mono text-on-surface-variant/60" id="footer-right"></span>
     </footer>
   </main>
-
-  <aside class="hidden md:flex flex-col h-full py-stack-lg w-sidebar_width border-l border-outline-variant/60 bg-surface-container-low/60 backdrop-blur-xl">
-    <div class="px-6 mb-8">
-      <div class="flex items-center gap-3 mb-2">
-        <div class="w-7 h-7 flex items-center justify-center rounded-lg ghost-border-glow" style="background: linear-gradient(135deg, rgba(74,144,226,0.15), rgba(126,87,194,0.15));">
-          <span class="ghost-mark w-5 h-5 inline-block text-white/80" data-ghost></span>
-        </div>
-        <span class="font-display-z1 text-display-z1 tracking-tighter" style="background: linear-gradient(135deg, #b39ddb, #4a90e2); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Z1</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-1.5 h-1.5 rounded-full" id="node-dot" style="background:#9e9ab0"></div>
-        <span class="font-body-md text-xs text-on-surface-variant/70" id="node-status-text">No model loaded</span>
-      </div>
-    </div>
-
-    <nav class="flex-1 px-3 space-y-1 overflow-y-auto">
-      <a class="flex items-center gap-3 py-2.5 px-3.5 rounded-xl font-semibold" href="#" id="new-chat-btn"
-        style="background: linear-gradient(135deg, rgba(74,144,226,0.12), rgba(126,87,194,0.12)); color:#b39ddb;">
-        <span class="material-symbols-outlined text-[20px]" style="color:#4a90e2;">add</span>
-        <span class="font-body-md text-body-md">New chat</span>
-      </a>
-      <span class="flex items-center gap-3 py-2.5 px-3.5 rounded-xl text-on-surface-variant/30 cursor-default hover:bg-surface-variant/30 hover:text-on-surface-variant/60 transition-all">
-        <span class="material-symbols-outlined text-[20px]" style="color:#81c784/50;">memory</span>
-        <span class="font-body-md text-body-md">Models</span>
-        <span class="ml-auto text-[9px] uppercase tracking-wider text-on-surface-variant/30 font-mono">soon</span>
-      </span>
-      <span class="flex items-center gap-3 py-2.5 px-3.5 rounded-xl text-on-surface-variant/30 cursor-default hover:bg-surface-variant/30 hover:text-on-surface-variant/60 transition-all">
-        <span class="material-symbols-outlined text-[20px]" style="color:#f8bbd0/50;">monitoring</span>
-        <span class="font-body-md text-body-md">Hardware</span>
-        <span class="ml-auto text-[9px] uppercase tracking-wider text-on-surface-variant/30 font-mono">soon</span>
-      </span>
-
-      <div class="mt-8 px-3">
-        <p class="font-label-caps text-label-caps mb-3 uppercase tracking-widest" style="color:#7e57c2/60;">Sessions</p>
-        <div id="session-list">
-          <p class="font-body-md text-xs text-on-surface-variant/30 italic px-3">No sessions yet.</p>
-        </div>
-      </div>
-    </nav>
-
-    <div class="px-4 pt-4 border-t border-outline-variant/50 mt-auto">
-      <button class="w-full py-2.5 border border-outline-variant/50 text-on-surface-variant/70 font-medium text-sm rounded-xl hover:bg-surface-variant/50 hover:text-on-surface transition-all active:scale-[0.98] backdrop-blur-sm" id="load-model-btn">
-        <span class="flex items-center gap-2 justify-center">
-          <span class="material-symbols-outlined text-[16px]" style="color:#4a90e2;">download</span>
-          Load model
-        </span>
-      </button>
-    </div>
-  </aside>
 </div>
 
 <script>
@@ -303,23 +212,15 @@ function paintGhosts(online) {
   document.querySelectorAll('[data-ghost]').forEach(el => {
     const tpl = document.getElementById('ghost-template');
     el.innerHTML = tpl.innerHTML;
-    const body = el.querySelector('.ghost-body');
+    const path = el.querySelector('.ghost-path');
     const eyeL = el.querySelector('.ghost-eye-l');
     const eyeR = el.querySelector('.ghost-eye-r');
-    const pupilL = el.querySelector('.ghost-pupil-l');
-    const pupilR = el.querySelector('.ghost-pupil-r');
-    const browL = el.querySelector('.ghost-brow-l');
-    const browR = el.querySelector('.ghost-brow-r');
-    const smirk = el.querySelector('.ghost-smirk');
-    const color = online ? '#4a90e2' : 'currentColor';
-    if (body) body.setAttribute('stroke', online ? '#4a90e2' : 'currentColor');
-    if (eyeL) eyeL.setAttribute('fill', color);
-    if (eyeR) eyeR.setAttribute('fill', color);
-    if (pupilL) pupilL.setAttribute('fill', '#0b0c10');
-    if (pupilR) pupilR.setAttribute('fill', '#0b0c10');
-    if (browL) browL.setAttribute('stroke', color);
-    if (browR) browR.setAttribute('stroke', color);
-    if (smirk) smirk.setAttribute('stroke', color);
+    const color = online ? '#4a90e2' : '#4B4D52';
+    path.setAttribute('stroke', color);
+    eyeL.setAttribute('fill', color);
+    eyeR.setAttribute('fill', color);
+    eyeL.setAttribute('r', online ? 2.5 : 1.5);
+    eyeR.setAttribute('r', online ? 2.5 : 1.5);
   });
 }
 paintGhosts(false);
@@ -346,8 +247,8 @@ function setOnline(isOnline, modelName) {
     metaModel.textContent = modelName || '';
     metaModelSmall.textContent = modelName || '';
   } else {
-    dot.style.background = '#9e9ab0';
-    footDot.style.background = '#9e9ab0';
+    dot.style.background = '#8b919d';
+    footDot.style.background = '#8b919d';
     statusText.textContent = 'No model loaded';
     footerStatus.textContent = 'Offline';
     metaModel.textContent = 'no model';
@@ -404,11 +305,11 @@ function appendMessage(role, text, stats) {
   const wrap = document.createElement('div');
   if (role === 'user') {
     wrap.className = 'flex flex-col items-end';
-    wrap.innerHTML = '<div class="max-w-[85%] px-5 py-4 rounded-2xl rounded-tr-none" style="background: linear-gradient(135deg, rgba(74,144,226,0.12), rgba(126,87,194,0.12)); border: 1px solid rgba(74,144,226,0.15);"><p class="font-body-md text-on-surface"></p></div>';
+    wrap.innerHTML = '<div class="max-w-[85%] bg-surface-container-high border border-outline-variant px-5 py-4 rounded-xl rounded-tr-none"><p class="font-body-md text-on-surface"></p></div>';
     wrap.querySelector('p').textContent = text;
   } else {
     wrap.className = 'flex flex-col items-start';
-    wrap.innerHTML = '<div class="flex gap-6 w-full"><div class="w-[2.5px] rounded-full h-auto" style="background: linear-gradient(180deg, #4a90e2, #7e57c2);"></div><div class="flex-1 space-y-2"><div class="font-body-lg text-on-surface leading-relaxed opacity-90"></div><div class="pt-1 font-meta-mono text-meta-mono uppercase tracking-wider mono-stats" style="color:#9e9ab0;"></div></div></div>';
+    wrap.innerHTML = '<div class="flex gap-6 w-full"><div class="w-[2px] bg-celestial-blue/30 rounded-full h-auto"></div><div class="flex-1 space-y-2"><div class="font-body-lg text-on-surface leading-relaxed opacity-90"></div><div class="pt-1 font-meta-mono text-meta-mono text-outline uppercase tracking-wider mono-stats"></div></div></div>';
     wrap.querySelector('.font-body-lg').textContent = text;
     wrap.querySelector('.mono-stats').textContent = stats || '';
   }
@@ -418,6 +319,7 @@ function appendMessage(role, text, stats) {
 
 const Z1_SERVER = 'http://127.0.0.1:7474';
 
+/* REAL Z1 connection — plain HTTP fetch, no Tauri needed. */
 async function sendToZ1(text) {
   try {
     const res = await fetch(Z1_SERVER + '/chat', {
@@ -478,6 +380,8 @@ async function pickAndLoadModel() {
   }
 }
 
+// Prefill the path input with whatever was last successfully loaded,
+// so a returning user doesn't have to retype/repaste it every time.
 (function restoreLastModelPath() {
   try {
     const last = localStorage.getItem('z1_last_model_path');
@@ -486,10 +390,18 @@ async function pickAndLoadModel() {
   } catch {}
 })();
 
+// Check server status on page load so the offline/online dot is honest
+// from the very first paint, not just after a load attempt.
 (async function checkServerOnLoad() {
   try {
-    const res = await fetch(Z1_SERVER + '/health', { signal: AbortSignal.timeout(2000) });
-    if (res.ok) {
+    const statusRes = await fetch(Z1_SERVER + '/status', { signal: AbortSignal.timeout(2000) });
+    if (statusRes.ok) {
+      const status = await statusRes.json();
+      if (status.loaded) {
+        setOnline(true, status.model_name);
+        showScreen('screen-chat');
+        return;
+      }
       document.getElementById('node-status-text').textContent = 'Server reachable — no model loaded';
     }
   } catch {
@@ -504,7 +416,9 @@ document.getElementById('new-chat-btn').addEventListener('click', async (e) => {
 
   try {
     await fetch(Z1_SERVER + '/new_session', { method: 'POST' });
-  } catch {}
+  } catch {
+    // Connection issue will surface on next send anyway.
+  }
 
   thread.innerHTML = '<p class="text-center text-on-surface-variant/40 text-sm italic mt-12">New conversation. Say something.</p>';
   emptyHint = thread.querySelector('p');
@@ -528,7 +442,7 @@ sendBtn.addEventListener('click', async () => {
 
   const thinking = document.createElement('div');
   thinking.className = 'flex flex-col items-start opacity-80';
-  thinking.innerHTML = '<div class="flex gap-6 w-full"><div class="w-[2.5px] rounded-full h-auto" style="background: linear-gradient(180deg, #4a90e2, #7e57c2);"></div><div class="flex-1 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:#b39ddb;"></span><span class="font-body-md text-on-surface-variant text-sm">Thinking</span><span class="font-meta-mono text-meta-mono text-on-surface-variant/50 mono-stats" id="thinking-elapsed">0.0s</span></div></div>';
+  thinking.innerHTML = '<div class="flex gap-6 w-full"><div class="w-[2px] bg-celestial-blue rounded-full h-auto"></div><div class="flex-1 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-celestial-blue animate-pulse"></span><span class="font-body-md text-on-surface-variant text-sm">Thinking</span><span class="font-meta-mono text-meta-mono text-on-surface-variant/60 mono-stats" id="thinking-elapsed">0.0s</span></div></div>';
   thread.appendChild(thinking);
   document.getElementById('chat-scroll').scrollTop = thread.scrollHeight;
 
