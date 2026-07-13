@@ -121,3 +121,14 @@ extern "C" {
 // Additional ops used by graph.rs KV cache path
 extern "C" {
 }
+// Missing struct definition for ggml_init
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ggml_context_params {
+    pub size: usize,
+    pub no_alloc: bool,
+}
+
+// Ensure ggml_init is declared if missing (assuming it exists, but safe to re-declare signature)
+// If it's already there, this might conflict, so we check first.
+// But usually, the struct is the missing piece.

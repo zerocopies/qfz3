@@ -1,0 +1,27 @@
+# Build artifacts
+target/
+*.pdb
+
+# Model files (huge, don't commit)
+*.gguf
+*.bin
+
+# Environment variables
+.env
+*.env
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cargo lock (optional, uncomment if you want to commit it)
+# Cargo.lock

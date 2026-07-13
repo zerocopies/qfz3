@@ -283,6 +283,72 @@ impl Tokenizer {
             }
         }
     }
+    /// Construct a Tokenizer directly from a MappedModel.
+    /// Extracts vocabulary and merge rules from the GGUF metadata.
+    pub fn from_model(model: &crate::loader::MappedModel) -> Result<Self, TokenizerError> {
+        use crate::gguf::GgufValue;
+
+        // 1. Extract tokens array
+        let tokens_meta = model.header.metadata.get("tokenizer.ggml.tokens")
+            .ok_or(TokenizerError::MissingVocab)?;
+        
+        let tokens: Vec<String> = match tokens_meta {
+            GgufValue::Array(arr) => arr.iter()
+                .filter_map(|v| match v {
+                    GgufValue::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => return Err(TokenizerError::MissingVocab),
+        };
+
+        // 2. Extract scores array (optional but expected)
+        let scores_meta = model.header.metadata.get("tokenizer.ggml.scores");
+        let scores: Vec<f32> = match scores_meta {
+            Some(GgufValue::Array(arr)) => arr.iter()
+                .filter_map(|v| match v {
+                    GgufValue::F32(f) => Some(*f),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(), // Allow empty scores if not present
+        };
+
+        // 3. Extract types array (optional)
+        let types_meta = model.header.metadata.get("tokenizer.ggml.token_type");
+        let types: Vec<u32> = match types_meta {
+            Some(GgufValue::Array(arr)) => arr.iter()
+                .filter_map(|v| match v {
+                    GgufValue::U32(u) => Some(*u),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        // 4. Extract merges array
+        let merges_meta = model.header.metadata.get("tokenizer.ggml.merges");
+        let merges: Vec<String> = match merges_meta {
+            Some(GgufValue::Array(arr)) => arr.iter()
+                .filter_map(|v| match v {
+                    GgufValue::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        // Validate sizes
+        if !scores.is_empty() && scores.len() != tokens.len() {
+            return Err(TokenizerError::VocabSizeMismatch { tokens: tokens.len(), scores: scores.len() });
+        }
+        if !types.is_empty() && types.len() != tokens.len() {
+            return Err(TokenizerError::VocabSizeMismatch { tokens: tokens.len(), scores: types.len() });
+        }
+
+        // Delegate to existing constructor
+        Self::from_gguf_parts(&tokens, &scores, &types, &merges)
+    }
 }
 
 // ── Helper: parse <0xNN> byte token notation ──────────────────────────────────
