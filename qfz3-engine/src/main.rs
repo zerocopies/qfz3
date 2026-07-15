@@ -81,14 +81,14 @@ fn main() -> Result<()> {
 
     // 3. Initialize ForwardPass with DYNAMIC ctx_size
     // Ensure ForwardPass::new accepts (model, n_ctx)
-    let mut fwd = ForwardPass::new(&model, ctx_size)?;
+    let mut fwd = ForwardPass::new(&model, ctx_size.try_into().unwrap(), "llama")?;
     
     // Update GenerateConfig to match the actual context size
     let mut cfg = GenerateConfig::default();
     cfg.context_len = ctx_size as usize;
 
     // 4. Initialize the Sliding-Window Session
-    let mut session = Session::new(cfg.context_len, &tokenizer, fwd.dna().arch.as_str());
+    let mut session = Session::new(cfg.context_len, &tokenizer, fwd.arch.as_str());
 
     println!("[System] Engine ready. Context window: {} tokens.", cfg.context_len);
     println!("         Type '/exit' to quit or '/reset' to clear context.\n");

@@ -1,20 +1,21 @@
-use buzz_router::server;
+use buzz_router::server::run_server;
+use std::env;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+async fn main() -> Result<(), anyhow::Error> {
+    let args: Vec<String> = env::args().collect();
 
-    let model_path = std::env::args()
-        .nth(1)
-        .expect("Usage: server <path/to/model.gguf> [addr] [anthropic_key]");
+    if args.len() < 2 {
+        eprintln!("Usage: {} <model_path> [addr] [anthropic_key] [groq_key] [gemini_key]", args[0]);
+        std::process::exit(1);
+    }
 
-    let addr = std::env::args().nth(2).unwrap_or("127.0.0.1:7474".to_string());
-    
-    // Try env var first, then CLI arg
-    let anthropic_key = std::env::args().nth(3)
-        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+    let model_path = &args[1];
+    let addr = args.get(2).map(|s| s.as_str()).unwrap_or("127.0.0.1:7474");
 
-    server::run_server(&model_path, &addr, anthropic_key.as_deref()).await?;
+    let anthropic_key = args.get(3).cloned().or_else(|| env::var("ANTHROPIC_API_KEY").ok());
+    let groq_key = args.get(4).cloned().or_else(|| env::var("GROQ_API_KEY").ok());
+    let gemini_key = args.get(5).cloned().or_else(|| env::var("GEMINI_API_KEY").ok());
 
-    Ok(())
+    run_server(model_path, addr, anthropic_key.as_deref(), groq_key.as_deref(), gemini_key.as_deref()).await
 }

@@ -1,16 +1,19 @@
 pub mod local_z3;
 pub mod anthropic;
 pub mod openai;
+pub mod groq;
+pub mod gemini;
 
 use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
-
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ProviderType {
     Local,
     Anthropic,
     OpenAI,
+    Groq,
+    Gemini,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
