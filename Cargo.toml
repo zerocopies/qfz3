@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "qfz3-engine",
-    "buzz-router",
 ]
 resolver = "2"
 
