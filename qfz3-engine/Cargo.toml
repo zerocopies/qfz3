@@ -10,13 +10,13 @@ license     = "MIT"
 name = "qfz3"
 path = "src/lib.rs"
 
-[[bin]]
-name = "qfz3"
-path = "src/main.rs"
-
-[[bin]]
-name = "qfz3-server"
-path = "src/bin/z1-server.rs"
+#[[bin]]
+#name = "qfz3"
+#path = "src/main.rs"
+#
+#[[bin]]
+#name = "qfz3-server"
+#path = "src/bin/z1-server.rs"
 
 [dependencies]
 libc        = "0.2"
