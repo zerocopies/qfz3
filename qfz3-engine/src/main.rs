@@ -12,14 +12,14 @@
 // copied onto the heap. KV cache uses a persistent decode graph (built once,
 // reused every token) for O(1) per-step decoding.
 
-use qfz3::gguf;
-use qfz3::ggml_ffi;
-use qfz3::loader;
-use qfz3::graph;
-use qfz3::mapper;
-use qfz3::logits;
-use qfz3::tokenizer;
-use qfz3::generate;
+mod gguf;
+mod ggml_ffi;
+mod loader;
+mod graph;
+mod mapper;
+mod logits;
+mod tokenizer;
+mod generate;
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
