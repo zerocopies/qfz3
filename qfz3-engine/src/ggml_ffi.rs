@@ -1,8 +1,8 @@
-#![allow(non_camel_case_types, dead_code)]
-
 // Z.1 — ggml_ffi.rs
 // Single source of truth for all ggml opaque types and FFI declarations.
 // Both loader.rs and graph.rs import from here.
+
+#[allow(non_camel_case_types, dead_code)]
 
 use std::ffi::c_void;
 use libc::c_int;
@@ -64,7 +64,6 @@ extern "C" {
     pub fn ggml_new_tensor(ctx: *mut ggml_context, dtype: c_int, ndim: c_int, ne: *const i64) -> *mut ggml_tensor;
     pub fn ggml_new_tensor_1d(ctx: *mut ggml_context, dtype: c_int, ne0: i64) -> *mut ggml_tensor;
     pub fn ggml_new_tensor_2d(ctx: *mut ggml_context, dtype: c_int, ne0: i64, ne1: i64) -> *mut ggml_tensor;
-    pub fn ggml_new_tensor_3d(ctx: *mut ggml_context, dtype: c_int, ne0: i64, ne1: i64, ne2: i64) -> *mut ggml_tensor;
     pub fn ggml_set_name(tensor: *mut ggml_tensor, name: *const libc::c_char);
     pub fn ggml_set_input(tensor: *mut ggml_tensor);
     pub fn ggml_set_output(tensor: *mut ggml_tensor);
@@ -96,7 +95,6 @@ extern "C" {
     pub fn ggml_reshape_2d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64) -> *mut ggml_tensor;
     pub fn ggml_reshape_3d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64, ne2: i64) -> *mut ggml_tensor;
     pub fn ggml_permute(ctx: *mut ggml_context, a: *mut ggml_tensor, ax0: c_int, ax1: c_int, ax2: c_int, ax3: c_int) -> *mut ggml_tensor;
-    pub fn ggml_repeat(ctx: *mut ggml_context, a: *mut ggml_tensor, b: *mut ggml_tensor) -> *mut ggml_tensor;
     pub fn ggml_view_1d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, offset: usize) -> *mut ggml_tensor;
     pub fn ggml_view_2d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64, nb1: usize, offset: usize) -> *mut ggml_tensor;
 
@@ -121,14 +119,3 @@ extern "C" {
 // Additional ops used by graph.rs KV cache path
 extern "C" {
 }
-// Missing struct definition for ggml_init
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct ggml_context_params {
-    pub size: usize,
-    pub no_alloc: bool,
-}
-
-// Ensure ggml_init is declared if missing (assuming it exists, but safe to re-declare signature)
-// If it's already there, this might conflict, so we check first.
-// But usually, the struct is the missing piece.

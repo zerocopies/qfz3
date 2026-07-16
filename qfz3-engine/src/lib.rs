@@ -9,5 +9,4 @@ pub mod logits;
 pub mod generate;
 
 pub use engine::Engine;
-pub use graph::Graph;
 // Removed run_generation_captured export as it's not used in MVP
