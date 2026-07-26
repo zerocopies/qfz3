@@ -70,6 +70,8 @@ pub struct LlamaHparams {
     pub n_rot:        i64,
     pub freq_base:    f32,
     pub rms_norm_eps: f32,
+    /// ggml rope mode: 0 = normal (llama), 2 = NEOX (qwen2, phi, etc.)
+    pub rope_mode:    i32,
 }
 
 impl LlamaHparams {
@@ -84,16 +86,34 @@ impl LlamaHparams {
                 .and_then(|v| if let crate::gguf::GgufValue::F32(f) = v { Some(*f) } else { None })
                 .unwrap_or(default)
         };
+        // vocab_size is optional GGUF metadata (and was wrongly hardcoded to the
+        // llama prefix); fall back to token_embd.weight's second dim, which is
+        // authoritative for any arch.
+        let n_vocab = {
+            let v = get_u32(&format!("{}.vocab_size", arch));
+            if v > 0 { v } else {
+                model.tensor("token_embd.weight")
+                    .map(|t| unsafe { tensor_dims(t)[1] })
+                    .unwrap_or(0)
+            }
+        };
         LlamaHparams {
-            n_vocab:      get_u32("llama.vocab_size"),
+            n_vocab,
             n_embd:       get_u32(&format!("{}.embedding_length", arch)),
             n_head:       get_u32(&format!("{}.attention.head_count", arch)),
             n_head_kv:    get_u32(&format!("{}.attention.head_count_kv", arch)),
             n_layer:      get_u32(&format!("{}.block_count", arch)),
             n_ff:         get_u32(&format!("{}.feed_forward_length", arch)),
-            n_rot:        get_u32(&format!("{}.rope.dimension_count", arch)),
+            // rope.dimension_count is optional metadata (absent in many qwen2
+            // GGUFs); when missing, rope spans the full head dim.
+            n_rot:        { let r = get_u32(&format!("{}.rope.dimension_count", arch));
+                            if r > 0 { r } else {
+                                get_u32(&format!("{}.embedding_length", arch))
+                                / get_u32(&format!("{}.attention.head_count", arch)).max(1)
+                            } },
             freq_base:    get_f32(&format!("{}.rope.freq_base", arch), 500000.0),
             rms_norm_eps: get_f32(&format!("{}.attention.layer_norm_rms_epsilon", arch), 1e-5),
+            rope_mode:    if arch.starts_with("qwen") { 2 } else { 0 },
         }
     }
     pub fn head_dim(&self) -> i64 { self.n_embd / self.n_head }
@@ -321,6 +341,13 @@ impl LlamaGraph {
             let q = unsafe { ffi::ggml_mul_mat(ctx, t("attn_q.weight")?, normed) };
             let k = unsafe { ffi::ggml_mul_mat(ctx, t("attn_k.weight")?, normed) };
             let v = unsafe { ffi::ggml_mul_mat(ctx, t("attn_v.weight")?, normed) };
+            // Optional QKV biases (present in qwen2-family models; absent in llama)
+            let q = match model.layer_tensor(layer, "attn_q.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, q, b) }, None => q };
+            let k = match model.layer_tensor(layer, "attn_k.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, k, b) }, None => k };
+            let v = match model.layer_tensor(layer, "attn_v.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, v, b) }, None => v };
 
             let q = unsafe { ffi::ggml_reshape_3d(ctx, q, hd, hp.n_head,    n_tokens) };
             let k = unsafe { ffi::ggml_reshape_3d(ctx, k, hd, hp.n_head_kv, n_tokens) };
@@ -328,9 +355,9 @@ impl LlamaGraph {
 
             // RoPE
             let q = unsafe { ffi::ggml_rope_ext(ctx, q, d_pos, std::ptr::null_mut(),
-                hp.n_rot as c_int, 0, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
+                hp.n_rot as c_int, hp.rope_mode as c_int, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
             let k = unsafe { ffi::ggml_rope_ext(ctx, k, d_pos, std::ptr::null_mut(),
-                hp.n_rot as c_int, 0, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
+                hp.n_rot as c_int, hp.rope_mode as c_int, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
 
             // K/V for current token — output tensors written to cache after execution
             let k_flat = unsafe { ffi::ggml_reshape_2d(ctx,
@@ -395,7 +422,8 @@ impl LlamaGraph {
         cur = unsafe { ffi::ggml_mul(ctx,
             ffi::ggml_rms_norm(ctx, cur, hp.rms_norm_eps), out_norm) };
         let lm_head = model.tensor("output.weight")
-            .ok_or_else(|| anyhow::anyhow!("output.weight not found"))?;
+            .or_else(|| model.tensor("token_embd.weight"))
+            .ok_or_else(|| anyhow::anyhow!("output.weight or token_embd.weight not found"))?;
         let d_logits = unsafe { ffi::ggml_mul_mat(ctx, lm_head, cur) };
         unsafe {
             ffi::ggml_set_output(d_logits);
@@ -526,9 +554,12 @@ impl LlamaGraph {
         let hp        = &self.hp;
         let n_tokens  = tokens.len() as i64;
         let tok_bytes = n_tokens as usize * 4;
-
+        let kv_head_pf = self.kv.head;
+        let kv_len_pf  = kv_head_pf + n_tokens;
+        let mask_bytes = (kv_len_pf * n_tokens) as usize * 4;
         let inp_buf = unsafe {
-            ffi::ggml_backend_alloc_buffer(self.backend, tok_bytes * 2 + 256)
+            ffi::ggml_backend_alloc_buffer(self.backend,
+                tok_bytes * 2 + mask_bytes + 384)
         };
         if inp_buf.is_null() { bail!("[Z.1 Graph] ggml_backend_alloc_buffer failed"); }
         let inp_base = unsafe { ffi::ggml_backend_buffer_get_base(inp_buf) } as usize;
@@ -558,6 +589,23 @@ impl LlamaGraph {
                 (inp_base + pos_offset) as *mut c_void);
             ffi::ggml_backend_tensor_set(inp_pos,
                 positions.as_ptr() as *const c_void, 0, tok_bytes);
+        }
+        // Causal mask [kv_len, n_tokens]: query i sees keys 0..=kv_head+i.
+        let mask_offset = ((pos_offset + tok_bytes) + 63) & !63;
+        let inp_mask = unsafe { ffi::ggml_new_tensor_2d(inp_ctx, 0, kv_len_pf, n_tokens) };
+        {
+            let mut mask = vec![0.0f32; (kv_len_pf * n_tokens) as usize];
+            for i in 0..n_tokens {
+                for j in (kv_head_pf + i + 1)..kv_len_pf {
+                    mask[(i * kv_len_pf + j) as usize] = f32::NEG_INFINITY;
+                }
+            }
+            unsafe {
+                ffi::ggml_backend_tensor_alloc(inp_buf, inp_mask,
+                    (inp_base + mask_offset) as *mut c_void);
+                ffi::ggml_backend_tensor_set(inp_mask,
+                    mask.as_ptr() as *const c_void, 0, mask_bytes);
+            }
         }
 
         let ctx = unsafe {
@@ -600,15 +648,22 @@ impl LlamaGraph {
             let q = unsafe { ffi::ggml_mul_mat(ctx, t("attn_q.weight")?, normed) };
             let k = unsafe { ffi::ggml_mul_mat(ctx, t("attn_k.weight")?, normed) };
             let v = unsafe { ffi::ggml_mul_mat(ctx, t("attn_v.weight")?, normed) };
+            // Optional QKV biases (present in qwen2-family models; absent in llama)
+            let q = match model.layer_tensor(layer, "attn_q.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, q, b) }, None => q };
+            let k = match model.layer_tensor(layer, "attn_k.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, k, b) }, None => k };
+            let v = match model.layer_tensor(layer, "attn_v.bias") {
+                Some(b) => unsafe { ffi::ggml_add(ctx, v, b) }, None => v };
 
             let q = unsafe { ffi::ggml_reshape_3d(ctx, q, hd, hp.n_head,    n_tokens) };
             let k = unsafe { ffi::ggml_reshape_3d(ctx, k, hd, hp.n_head_kv, n_tokens) };
             let v = unsafe { ffi::ggml_reshape_3d(ctx, v, hd, hp.n_head_kv, n_tokens) };
 
             let q = unsafe { ffi::ggml_rope_ext(ctx, q, inp_pos, std::ptr::null_mut(),
-                hp.n_rot as c_int, 0, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
+                hp.n_rot as c_int, hp.rope_mode as c_int, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
             let k = unsafe { ffi::ggml_rope_ext(ctx, k, inp_pos, std::ptr::null_mut(),
-                hp.n_rot as c_int, 0, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
+                hp.n_rot as c_int, hp.rope_mode as c_int, 131072, hp.freq_base, 1.0, 0.0, 1.0, 32.0, 1.0) };
 
             // Write K/V into cache via ggml_cpy
             let k_flat = unsafe { ffi::ggml_reshape_2d(ctx,
@@ -650,8 +705,7 @@ impl LlamaGraph {
 
             let kq = unsafe { ffi::ggml_scale(ctx,
                 ffi::ggml_mul_mat(ctx, k_perm, q_perm), scale) };
-            let kq = unsafe { ffi::ggml_soft_max_ext(ctx, kq,
-                std::ptr::null_mut(), 1.0, 0.0) };
+            let kq = unsafe { ffi::ggml_soft_max_ext(ctx, kq, inp_mask, 1.0, 0.0) };
             let av = unsafe { ffi::ggml_mul_mat(ctx, v_perm, kq) };
             let av = unsafe { ffi::ggml_reshape_2d(ctx,
                 ffi::ggml_cont(ctx, ffi::ggml_permute(ctx, av, 0, 2, 1, 3)),
@@ -675,16 +729,22 @@ impl LlamaGraph {
         cur = unsafe { ffi::ggml_mul(ctx,
             ffi::ggml_rms_norm(ctx, cur, hp.rms_norm_eps), out_norm) };
 
-        let last = unsafe { ffi::ggml_view_1d(ctx, cur, hp.n_embd,
-            ((n_tokens - 1) * hp.n_embd * 4) as usize) };
         let lm_head = model.tensor("output.weight")
-            .ok_or_else(|| anyhow::anyhow!("output.weight not found"))?;
+            .or_else(|| model.tensor("token_embd.weight"))
+            .ok_or_else(|| anyhow::anyhow!("output.weight or token_embd.weight not found"))?;
+        // Slice out the final token's hidden state: cur is [n_embd, n_tokens]
+        let last = unsafe {
+            let row_bytes = ffi::ggml_element_size(cur) * hp.n_embd as usize;
+            ffi::ggml_view_2d(ctx, cur,
+                hp.n_embd as i64, 1,
+                row_bytes,
+                row_bytes * (n_tokens as usize - 1))
+        };
         let logits = unsafe { ffi::ggml_mul_mat(ctx, lm_head, last) };
         unsafe {
             ffi::ggml_set_output(logits);
             ffi::ggml_build_forward_expand(graph, logits);
         }
-
         let buft   = unsafe { ffi::ggml_backend_cpu_buffer_type() };
         let galloc = unsafe { ffi::ggml_gallocr_new(buft) };
         if galloc.is_null() {
@@ -746,14 +806,15 @@ impl LlamaGraph {
             return Err(ForwardError::AllocationFailed("empty token sequence".into()));
         }
         let tokens: Vec<i32> = token_ids.iter().map(|&t| t as i32).collect();
-        self.forward(model, &tokens, 0)
+        let pos = self.kv.head as i32;
+        self.forward(model, &tokens, pos)
             .map_err(|e| ForwardError::AllocationFailed(e.to_string()))
     }
 
     pub fn decode_one(&mut self, token_id: u32, model: &MappedModel)
         -> Result<Vec<f32>, ForwardError>
     {
-        self.execute_decode(token_id, model)
+        self.forward(model, &[token_id as i32], self.kv.head as i32)
             .map_err(|e| ForwardError::AllocationFailed(e.to_string()))
     }
 }

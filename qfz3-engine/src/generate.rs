@@ -21,7 +21,7 @@ use std::time::Instant;
 use crate::graph::{ForwardPass, ForwardError};
 use crate::loader::MappedModel;
 use crate::logits::{sample_token, SamplingConfig, rng_seed_from_time, LogitError};
-use crate::tokenizer::{Tokenizer, TOKEN_EOS};
+use crate::tokenizer::Tokenizer;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -284,60 +284,152 @@ pub fn generate_turn(
 
 // Special token IDs for Llama 3.1
 const T_BOS:          u32 = 128_000; // <|begin_of_text|>
-const T_START_HEADER: u32 = 128_006; // <|start_header_id|>
-const T_END_HEADER:   u32 = 128_007; // <|end_header_id|>
-const T_EOT:          u32 = 128_009; // <|eot_id|>
-const T_NEWLINES:     u32 = 271;     // "\n\n"
+const T_NEWLINES_LLAMA: u32 = 271; // "\n\n" in llama-3 vocab
 
-/// Build the Llama 3.1 instruct token sequence for the FIRST turn of a
-/// conversation: BOS + system prompt + user message + assistant header.
+/// Which instruct format a model expects, decided by what special tokens
+/// actually exist in its vocab (authoritative, arch-string-independent).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ChatFormat { ChatML, Llama3 }
+
+fn detect_chat_format(tok: &Tokenizer) -> ChatFormat {
+    if tok.special_id("<|im_start|>").is_some() {
+        ChatFormat::ChatML
+    } else {
+        ChatFormat::Llama3
+    }
+}
+
+const SYSTEM_PROMPT: &str = "You are a helpful AI assistant.";
+
+/// Build the token sequence for the FIRST turn of a conversation:
+/// system + user, plus the assistant-open framing, in the model's own format.
 pub fn build_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    match detect_chat_format(tok) {
+        ChatFormat::ChatML  => build_chatml_first(user_message, tok),
+        ChatFormat::Llama3  => build_llama3_first(user_message, tok),
+    }
+}
+
+/// Build a FOLLOW-UP turn: just the new user message + assistant-open framing,
+/// with NO BOS and NO system prompt. Appended to the existing KV cache.
+pub fn build_followup_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    let ids = match detect_chat_format(tok) {
+        ChatFormat::ChatML  => build_chatml_followup(user_message, tok),
+        ChatFormat::Llama3  => build_llama3_followup(user_message, tok),
+    };
+    if std::env::var("Z1_TOK_TRACE").ok().as_deref() == Some("1") {
+        eprintln!("[Z.1 TOKTRACE] followup ids ({}): {:?}", ids.len(), ids);
+        let decoded: Vec<String> = ids.iter()
+            .map(|&id| tok.decode_one(id).unwrap_or_else(|| format!("<{id}>")))
+            .collect();
+        eprintln!("[Z.1 TOKTRACE] followup decoded: {:?}", decoded);
+    }
+    ids
+}
+
+// ── ChatML (qwen2, and most non-llama instruct models) ──────────────────────
+// <|im_start|>role\n{content}<|im_end|>\n ... <|im_start|>assistant\n
+
+fn build_chatml_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    let im_start = tok.special_id("<|im_start|>").expect("ChatML: <|im_start|> missing");
+    let im_end   = tok.special_id("<|im_end|>").expect("ChatML: <|im_end|> missing");
     let mut ids: Vec<u32> = Vec::new();
 
-    ids.push(T_BOS);
+    // System
+    ids.push(im_start);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("system\n{SYSTEM_PROMPT}")));
+    ids.push(im_end);
+    ids.extend_from_slice(&tok.encode_no_bos("\n"));
 
-    // System turn
-    ids.push(T_START_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos("system"));
-    ids.push(T_END_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos("\n\nYou are a helpful AI assistant."));
-    ids.push(T_EOT);
+    // User
+    ids.push(im_start);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("user\n{user_message}")));
+    ids.push(im_end);
+    ids.extend_from_slice(&tok.encode_no_bos("\n"));
 
-    // User turn
-    ids.push(T_START_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos("user"));
-    ids.push(T_END_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos(&format!("\n\n{user_message}")));
-    ids.push(T_EOT);
-
-    // Assistant header — model generates the response after this
-    ids.push(T_START_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos("assistant"));
-    ids.push(T_END_HEADER);
-    ids.push(T_NEWLINES);
+    // Assistant open
+    ids.push(im_start);
+    ids.extend_from_slice(&tok.encode_no_bos("assistant\n"));
 
     ids
 }
 
-/// Build the token sequence for a FOLLOW-UP turn: just the new user message
-/// wrapped in user/assistant headers, with NO BOS and NO system prompt.
-/// Appended to the existing KV cache, which already holds everything before
-/// this point (including the model's previous EOT from its last reply).
-pub fn build_followup_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+fn build_chatml_followup(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    let im_start = tok.special_id("<|im_start|>").expect("ChatML: <|im_start|> missing");
+    let im_end   = tok.special_id("<|im_end|>").expect("ChatML: <|im_end|> missing");
     let mut ids: Vec<u32> = Vec::new();
 
-    // User turn
-    ids.push(T_START_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos("user"));
-    ids.push(T_END_HEADER);
-    ids.extend_from_slice(&tok.encode_no_bos(&format!("\n\n{user_message}")));
-    ids.push(T_EOT);
+    // Close the model's previous reply, in case its <|im_end|> was consumed as
+    // the stop token and never written to the KV cache.
+    ids.push(im_end);
+    ids.extend_from_slice(&tok.encode_no_bos("\n"));
 
-    // Assistant header
-    ids.push(T_START_HEADER);
+    ids.push(im_start);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("user\n{user_message}")));
+    ids.push(im_end);
+    ids.extend_from_slice(&tok.encode_no_bos("\n"));
+
+    ids.push(im_start);
+    ids.extend_from_slice(&tok.encode_no_bos("assistant\n"));
+
+    ids
+}
+
+// ── Llama 3 (header format) ─────────────────────────────────────────────────
+// <|begin_of_text|><|start_header_id|>role<|end_header_id|>\n\n{content}<|eot_id|>
+
+fn build_llama3_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    let bos = tok.special_id("<|begin_of_text|>").unwrap_or(128_000);
+    let sh  = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
+    let eh  = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
+    let eot = tok.special_id("<|eot_id|>").unwrap_or(128_009);
+    let mut ids: Vec<u32> = Vec::new();
+
+    ids.push(bos);
+
+    // System
+    ids.push(sh);
+    ids.extend_from_slice(&tok.encode_no_bos("system"));
+    ids.push(eh);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("\n\n{SYSTEM_PROMPT}")));
+    ids.push(eot);
+
+    // User
+    ids.push(sh);
+    ids.extend_from_slice(&tok.encode_no_bos("user"));
+    ids.push(eh);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("\n\n{user_message}")));
+    ids.push(eot);
+
+    // Assistant open
+    ids.push(sh);
     ids.extend_from_slice(&tok.encode_no_bos("assistant"));
-    ids.push(T_END_HEADER);
-    ids.push(T_NEWLINES);
+    ids.push(eh);
+    ids.push(T_NEWLINES_LLAMA);
+
+    ids
+}
+
+fn build_llama3_followup(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
+    let sh  = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
+    let eh  = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
+    let eot = tok.special_id("<|eot_id|>").unwrap_or(128_009);
+    let mut ids: Vec<u32> = Vec::new();
+
+    // Close the model's previous reply, in case its <|eot_id|> was consumed as
+    // the stop token and never written to the KV cache.
+    ids.push(eot);
+
+    ids.push(sh);
+    ids.extend_from_slice(&tok.encode_no_bos("user"));
+    ids.push(eh);
+    ids.extend_from_slice(&tok.encode_no_bos(&format!("\n\n{user_message}")));
+    ids.push(eot);
+
+    ids.push(sh);
+    ids.extend_from_slice(&tok.encode_no_bos("assistant"));
+    ids.push(eh);
+    ids.push(T_NEWLINES_LLAMA);
 
     ids
 }

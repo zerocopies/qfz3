@@ -1,3 +1,5 @@
+#![allow(non_camel_case_types)]
+#![allow(non_camel_case_types)]
 // Z.1 — ggml_ffi.rs
 // Single source of truth for all ggml opaque types and FFI declarations.
 // Both loader.rs and graph.rs import from here.
@@ -95,6 +97,7 @@ extern "C" {
     pub fn ggml_reshape_2d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64) -> *mut ggml_tensor;
     pub fn ggml_reshape_3d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64, ne2: i64) -> *mut ggml_tensor;
     pub fn ggml_permute(ctx: *mut ggml_context, a: *mut ggml_tensor, ax0: c_int, ax1: c_int, ax2: c_int, ax3: c_int) -> *mut ggml_tensor;
+    pub fn ggml_element_size(tensor: *const ggml_tensor) -> usize;
     pub fn ggml_view_1d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, offset: usize) -> *mut ggml_tensor;
     pub fn ggml_view_2d(ctx: *mut ggml_context, a: *mut ggml_tensor, ne0: i64, ne1: i64, nb1: usize, offset: usize) -> *mut ggml_tensor;
 
