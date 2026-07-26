@@ -69,6 +69,8 @@ pub struct Tokenizer {
     merge_rank: HashMap<(u32, u32), u32>,
     /// Pre-built: byte value (0-255) → token id for byte-fallback
     byte_to_token: [u32; 256],
+    /// Stop/terminator token ids derived from vocab (arch-agnostic)
+    stop_ids: Vec<u32>,
 }
 
 impl Tokenizer {
@@ -146,7 +148,18 @@ impl Tokenizer {
             }
         }
 
-        Ok(Self { vocab, token_to_id, merge_rank, byte_to_token })
+        // Derive stop ids from well-known terminator strings present in vocab.
+        const STOP_STRS: [&str; 6] = ["<|end_of_text|>", "<|eot_id|>",
+            "<|endoftext|>", "<|im_end|>", "</s>", "<|end|>"];
+        let mut stop_ids: Vec<u32> = STOP_STRS.iter()
+            .filter_map(|s| token_to_id.get(s.as_bytes()).copied())
+            .collect();
+        if stop_ids.is_empty() {
+            stop_ids.push(TOKEN_EOS);
+            stop_ids.push(TOKEN_EOT);
+        }
+        Ok(Self { vocab, token_to_id, merge_rank, stop_ids,
+            byte_to_token })
     }
 
     pub fn vocab_size(&self) -> usize { self.vocab.len() }
@@ -209,7 +222,14 @@ impl Tokenizer {
         Some(s.replace('\u{0120}', " ").replace('\u{010a}', "\n"))
     }
 
-    pub fn is_eos(&self, id: u32) -> bool { id == TOKEN_EOS || id == TOKEN_EOT }
+    pub fn is_eos(&self, id: u32) -> bool { self.stop_ids.contains(&id) }
+
+    /// Resolve a special/added token to its single vocab id by exact string
+    /// match, bypassing BPE segmentation. Returns None if the token is not a
+    /// literal vocab entry (e.g. a llama-3 special token in a qwen vocab).
+    pub fn special_id(&self, token: &str) -> Option<u32> {
+        self.token_to_id.get(token.as_bytes()).copied()
+    }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

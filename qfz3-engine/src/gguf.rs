@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::io::{self, BufReader, Read, Seek};
 use std::path::Path;
 
 // ── Magic & version ───────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ const GGUF_MAGIC: u32 = 0x46554747; // "GGUF" in little-endian
 const SUPPORTED_VERSIONS: [u32; 3] = [1, 2, 3];
 
 // ── Value types as defined in the GGUF spec ───────────────────────────────────
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GgufValue {
     U8(u8),
     I8(i8),
