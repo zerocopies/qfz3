@@ -1,95 +1,48 @@
-<<<<<<< HEAD
-# qfz3 - Hybrid AI Router
-
-## Features
-- Zero-copy GGUF model loading (memmap2)
-- Hybrid routing: local + cloud providers
-- HTTP API with full metadata tracking
-=======
-# Z3 Quantum-Flow
+# qfz3 — Zero-Copy Local LLM Inference Engine
 
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange?logo=rust)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/zerocopies/Z3-Quantum-Flow?style=flat-square)](https://github.com/zerocopies/Z3-Quantum-Flow)
 
 **A literally zero-copy local LLM inference engine — built from scratch in Rust.**
 
-Z3 Quantum-Flow is a custom inference engine for running quantized large language models locally, with **no dependency on llama.cpp's high-level API**. It implements its own compute graph, KV cache management, batched prefill, and autoregressive decode loop directly on top of ggml primitives.
+qfz3 is a custom inference engine for running quantized large language models locally, with **no dependency on llama.cpp's high-level API**. It implements its own compute graph, KV cache management, batched prefill, and autoregressive decode loop directly on top of ggml primitives.
 
 Built and maintained by [Zero Copies](https://github.com/zerocopies) — engineered for resource-constrained hardware without compromising on correctness.
 
-> **Perfect for:** Laptops, servers, edge devices, or any system where memory bandwidth matters. Runs Llama 3.1 8B at **1.49 tok/s on a 12-year-old ThinkPad X240**.
+> **Perfect for:** Laptops, servers, edge devices, or any system where memory bandwidth matters, and where running inference on-device (not in someone else's cloud) is the point.
 
 ---
 
-## 🚀 What makes it different
+## What makes it different
 
-Most local inference tools are **wrappers around llama.cpp**. Z3 Quantum-Flow is **not**. It owns its entire forward pass — from GGUF weight loading through memory-mapped tensors, to the compute graph, KV cache, and token sampling. Every component was designed, reviewed, and hardened through multiple iterations.
+Most local inference tools are **wrappers around llama.cpp**. qfz3 is **not**. It owns its entire forward pass — from GGUF weight loading through memory-mapped tensors, to the compute graph, KV cache, and token sampling.
 
-### Key design decisions:
+### Key design decisions
 
-- **Zero-copy weight loading** — model weights are memory-mapped directly from disk. No heap allocation for weights, ever. The engine wraps the mmap base pointer in a ggml backend buffer.
-- **Quantum-KV cache** — a single contiguous backend-allocated buffer for all layers. K and V tensors for each layer are views into this buffer at fixed offsets. Zero-copy writes via `ggml_cpy` into view slices — no round-trip through host memory during decode.
-- **Batched prefill** — all prompt tokens processed in a single graph pass with a causal mask. One gallocr plan regardless of prompt length.
-- **Per-token decode** — single-token autoregressive decode with graph rebuild per step. View offsets for KV writes are baked in at build time.
-- **Sliding window session manager** — when context fills, drops oldest turns and re-prefills from the system prompt, seamlessly.
-
----
-
-## ⚡ Performance
-
-Tested on a **ThinkPad X240** (Intel Core i5-4300U, 8GB RAM, SSD) — 12-year-old hardware.
-
-| Model | Prefill | Decode | Context |
-|-------|---------|--------|---------|
-| **Llama 3.1 8B Q4_K_M** | ~11s / 28 tokens | **1.49 tok/s** | 512 |
-
-**Improvement over initial Z1 baseline:**
-- Prefill: 32,911ms → 11,309ms (**3x faster**) after batched prefill
-- Decode: 0.83 → 1.49 tok/s (**1.8x faster**) after graph correctness fixes
-
-> Metrics table will be expanded with Phi-3-mini and Qwen2.5-Coder results.
+- **Zero-copy weight loading** — model weights are memory-mapped directly from disk. No heap allocation for weights, ever.
+- **Contiguous KV cache** — a single backend-allocated buffer for all layers; K/V tensors are views into fixed offsets. Zero-copy writes via `ggml_cpy`.
+- **Batched prefill** — all prompt tokens processed in a single graph pass with a causal mask.
+- **Arch-aware chat templating** — instruct format (ChatML vs. Llama-3 headers) is detected from what special tokens actually exist in a model's vocab, not hardcoded per-family. Same principle applies throughout: vocab size, rope dimensions, and EOS tokens are all resolved from the model's own metadata rather than assumed.
+- **Real multi-turn** — conversation state (KV cache + turn count) persists across turns; follow-up messages append rather than reprocessing history from scratch.
 
 ---
 
-## 🏗️ Architecture
+## Models supported
 
-```
-GGUF file (mmap)
-     │
-     ▼
-MappedModel (zero-copy weight tensors)
-     │
-     ▼
-ForwardPass (Z3 Quantum-Flow Engine)
-  ├── ModelDNA        — hyperparameters from GGUF metadata
-  ├── QuantumKV       — contiguous KV cache, view-based writes
-  ├── build_prefill_graph()  — batched N-token graph
-  ├── build_graph()          — single-token decode graph
-  └── cleanup_graph_resources() — single-point teardown
-     │
-     ▼
-generate.rs (sliding window session + sampling)
-     │
-     ▼
-qflow binary / qflow-server HTTP API
-```
+| Model | Status |
+|-------|--------|
+| **Llama 3.1 / 3.2 (Q4_K_M)** | ✅ Working — single-shot and multi-turn |
+| **Qwen2.5-Coder (1.5B / 3B)** | ✅ Working — single-shot and multi-turn |
+| Phi-3-mini | 🔧 Not yet supported (fused QKV split needed) |
+
+Qwen2 support required fixing a chain of llama-only assumptions that don't hold across architectures: vocab size, rope dimension count and mode (NEOX vs. normal), QKV attention biases, and the prefill causal mask. All of these now resolve from GGUF metadata / vocab contents rather than being hardcoded, so adding the next architecture should be materially easier than this one was.
 
 ---
 
-## 📦 Models supported
-
-| Model | Status | Notes |
-|-------|--------|-------|
-| **Llama 3.1 8B (Q4_K_M)** | ✅ Working | Fully tested, production-ready |
-| Qwen2.5-Coder 1.5B / 3B | 🔧 In progress | QKV bias + GQA fix needed |
-| Phi-3-mini | 🔧 In progress | Fused QKV split needed |
-
----
-
-## 🎯 Quick start
+## Quick start
 
 ### Requirements
+
 - Rust 1.75+
 - Linux (tested on Linux Mint)
 - A GGUF model file (e.g., from [Hugging Face](https://huggingface.co/models?other=gguf))
@@ -97,132 +50,89 @@ qflow binary / qflow-server HTTP API
 ### Build
 
 ```bash
-git clone https://github.com/zerocopies/Z3-Quantum-Flow
-cd Z3-Quantum-Flow/z1-core
-cargo build --release --bin qflow
+git clone https://github.com/zerocopies/qfz3
+cd qfz3
+cargo build --release --manifest-path qfz3-engine/Cargo.toml
 ```
 
 ### Run
 
 ```bash
-# Default 512 context
-./target/release/qflow /path/to/model.gguf
+# Single-shot
+target/release/qfz3 -m /path/to/model.gguf -p "Your prompt here"
 
-# Custom context size
-Z1_CTX_SIZE=2048 ./target/release/qflow /path/to/model.gguf
+# Interactive multi-turn chat
+target/release/qfz3 -m /path/to/model.gguf --chat
 ```
 
-### Commands in chat
+### Chat commands
 
 ```
 /reset   — clear conversation memory and KV cache
-/exit    — quit
+/quit    — exit
+```
+
+### CLI flags
+
+```
+-m, --model <path>       Path to GGUF model file
+-p, --prompt <text>      Single-shot prompt (non-interactive)
+-c, --chat               Interactive multi-turn chat REPL
+-b, --bench               Run benchmark harness
+-n, --max-tokens <N>     Max tokens to generate [default: 512]
+-t, --temperature <f>    Sampling temperature [default: 0.7]
+    --top-p <f>          Nucleus sampling threshold [default: 0.9]
+    --context-len <N>    KV cache context length [default: 4096]
 ```
 
 ---
 
-## 🌐 HTTP Server
-
-Z3 Quantum-Flow ships a standalone HTTP inference server for integration with external applications:
-
-```bash
-cargo build --release --bin qflow-server
-./target/release/qflow-server
-```
-
-### API Endpoints
+## Project structure
 
 ```
-GET  /health          — liveness check
-POST /load_model      — load a GGUF file
-POST /chat            — run inference, returns text + stats
-```
-
-Compatible with the included `z1-web.html` browser UI.
-
-### Example request
-
-```bash
-curl -X POST http://localhost:8080/chat \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "What is Rust?"}'
-```
-
----
-
-## 📂 Project structure
-
-```
-Z3-Quantum-Flow/
-├── z1-core/
+qfz3/
+├── qfz3-engine/
 │   ├── src/
-│   │   ├── graph.rs       — Z3 Quantum-Flow engine (ForwardPass)
-│   │   ├── generate.rs    — autoregressive loop + sliding window session
+│   │   ├── graph.rs       — compute graph (ForwardPass): prefill, decode, attention
+│   │   ├── generate.rs    — sampling loop, chat templating, multi-turn session logic
+│   │   ├── engine.rs       — public Engine API (load, generate_rich, reset)
 │   │   ├── loader.rs      — GGUF loader + zero-copy mmap
-│   │   ├── mapper.rs      — memory mapper
-│   │   ├── tokenizer.rs   — BPE tokenizer from GGUF metadata
+│   │   ├── tokenizer.rs   — BPE tokenizer, vocab-derived special tokens
 │   │   ├── logits.rs      — sampling (temperature, top-p, repetition penalty)
 │   │   ├── gguf.rs        — GGUF format parser
 │   │   ├── ggml_ffi.rs    — raw ggml bindings
-│   │   └── bin/
-│   │       └── z1-server.rs  — HTTP inference server
+│   │   └── main.rs        — CLI entrypoint
 │   └── Cargo.toml
-├── ZeroCopies/            — Tauri desktop UI (in development)
-├── z1-web.html            — browser chat UI
+├── vendor/llama.cpp/      — vendored ggml (compute backend, not llama.cpp's model code)
 ├── LICENSE
 └── README.md
 ```
 
+qfz3 is one component of the **Zero Copies** stack. [buzz-cli](https://github.com/zerocopies/buzz-cli) is the router/TUI product built on top of it, handling local-vs-cloud dispatch, sensitivity-based routing policy, and the interactive chat interface end users actually see.
+
 ---
 
-## 🗓️ Roadmap
+## Roadmap
 
 - [ ] Phi-3 fused QKV support
-- [ ] Qwen2.5 QKV bias + GQA broadcasting
-- [ ] Buzz Router — governance and multi-model routing layer
-- [ ] NEXUS — multi-agent coordination system
+- [ ] Persistent decode graph (currently rebuilds per token as an interim correctness measure; `ggml_concat`-based fix scoped)
+- [ ] Sliding-window / context management for long conversations
+- [ ] Streaming token output through the library API (currently returns a complete string)
 - [ ] Batched decode (multiple sequences)
-- [ ] Used-context attention optimization (attend to head, not full n_ctx)
-- [ ] Context size CLI argument
 - [ ] macOS & Windows support
-- [ ] Performance optimizations for ARM (Pi, mobile)
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Areas of particular interest:
-
-- Model architecture support (new quantization formats, attention variants)
-- Performance optimization (SIMD, platform-specific kernels)
-- Documentation improvements
-- Test coverage
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome — model architecture support, performance work, documentation, and tests are all valuable. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, and [GOVERNANCE.md](GOVERNANCE.md) for how decisions get made.
 
 ---
 
-## 📚 Further reading
-
-- [Zero-Copy Memory Mapping in Rust](https://docs.rust-embedded.org/book/)
-- [GGML Overview](https://github.com/ggerganov/ggml)
-- [LLM Inference Optimization](https://arxiv.org/abs/2206.04615)
-- [Quantization for LLMs](https://arxiv.org/abs/2210.17323)
-
----
-
-## 📄 License
+## License
 
 Apache 2.0 — see [LICENSE](LICENSE)
 
 ---
 
-## 🔗 Community
-
-- **GitHub Issues:** [Report bugs or request features](https://github.com/zerocopies/Z3-Quantum-Flow/issues)
-- **GitHub Discussions:** [Ask questions and share ideas](https://github.com/zerocopies/Z3-Quantum-Flow/discussions)
-
----
-
-*Part of the [Zero Copies](https://github.com/zerocopies) product family — building AI infrastructure for the real world.*
->>>>>>> origin/main
+*Part of the [Zero Copies](https://github.com/zerocopies) product family.
