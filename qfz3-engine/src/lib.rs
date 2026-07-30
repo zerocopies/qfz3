@@ -1,12 +1,12 @@
+pub mod engine;
+pub mod generate;
 pub mod ggml_ffi;
 pub mod gguf;
-pub mod mapper;
-pub mod loader;
-pub mod tokenizer;
 pub mod graph;
-pub mod engine;
+pub mod loader;
 pub mod logits;
-pub mod generate;
+pub mod mapper;
+pub mod tokenizer;
 
 pub use engine::Engine;
 // Removed run_generation_captured export as it's not used in MVP

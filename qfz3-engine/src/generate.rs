@@ -18,9 +18,9 @@ fn trace_enabled() -> bool {
 }
 use std::time::Instant;
 
-use crate::graph::{ForwardPass, ForwardError};
+use crate::graph::{ForwardError, ForwardPass};
 use crate::loader::MappedModel;
-use crate::logits::{sample_token, SamplingConfig, rng_seed_from_time, LogitError};
+use crate::logits::{rng_seed_from_time, sample_token, LogitError, SamplingConfig};
 use crate::tokenizer::Tokenizer;
 
 // ── Error type ────────────────────────────────────────────────────────────────
@@ -51,9 +51,21 @@ impl std::fmt::Display for GenerateError {
 }
 
 impl std::error::Error for GenerateError {}
-impl From<ForwardError> for GenerateError { fn from(e: ForwardError) -> Self { Self::Forward(e) } }
-impl From<LogitError>   for GenerateError { fn from(e: LogitError)   -> Self { Self::Logit(e) } }
-impl From<io::Error>    for GenerateError { fn from(e: io::Error)    -> Self { Self::Io(e) } }
+impl From<ForwardError> for GenerateError {
+    fn from(e: ForwardError) -> Self {
+        Self::Forward(e)
+    }
+}
+impl From<LogitError> for GenerateError {
+    fn from(e: LogitError) -> Self {
+        Self::Logit(e)
+    }
+}
+impl From<io::Error> for GenerateError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
 
 // ── Generation config ─────────────────────────────────────────────────────────
 
@@ -92,7 +104,9 @@ pub struct GenerateStats {
 
 impl GenerateStats {
     pub fn tokens_per_second(&self) -> f64 {
-        if self.generate_ms < 1.0 { return 0.0; }
+        if self.generate_ms < 1.0 {
+            return 0.0;
+        }
         self.generated_tokens as f64 / (self.generate_ms / 1000.0)
     }
 }
@@ -102,8 +116,10 @@ impl std::fmt::Display for GenerateStats {
         write!(
             f,
             "\n\n[Z.1] prompt: {} tokens ({:.0}ms) | generated: {} tokens ({:.0}ms, {:.2} tok/s)",
-            self.prompt_tokens, self.prompt_ms,
-            self.generated_tokens, self.generate_ms,
+            self.prompt_tokens,
+            self.prompt_ms,
+            self.generated_tokens,
+            self.generate_ms,
             self.tokens_per_second(),
         )
     }
@@ -121,7 +137,7 @@ fn run_generation(
     tok: &Tokenizer,
     cfg: &GenerateConfig,
 ) -> Result<GenerateStats, GenerateError> {
-    let (stats, _text) = run_generation_inner(turn_ids, fwd, model, tok, cfg, false)?;
+    let (stats, _text) = run_generation_inner(turn_ids, fwd, model, tok, cfg, false, None)?;
     Ok(stats)
 }
 
@@ -135,7 +151,20 @@ pub fn run_generation_captured(
     tok: &Tokenizer,
     cfg: &GenerateConfig,
 ) -> Result<(GenerateStats, String), GenerateError> {
-    run_generation_inner(turn_ids, fwd, model, tok, cfg, true)
+    run_generation_inner(turn_ids, fwd, model, tok, cfg, true, None)
+}
+
+/// Same as run_generation_captured, but calls on_token for each decoded
+/// piece as it's generated - used by Engine::generate_streaming.
+pub fn run_generation_captured_streaming(
+    turn_ids: &[u32],
+    fwd: &mut ForwardPass,
+    model: &MappedModel,
+    tok: &Tokenizer,
+    cfg: &GenerateConfig,
+    on_token: &mut dyn FnMut(&str),
+) -> Result<(GenerateStats, String), GenerateError> {
+    run_generation_inner(turn_ids, fwd, model, tok, cfg, true, Some(on_token))
 }
 
 fn run_generation_inner(
@@ -145,23 +174,30 @@ fn run_generation_inner(
     tok: &Tokenizer,
     cfg: &GenerateConfig,
     quiet: bool,
+    mut on_token: Option<&mut dyn FnMut(&str)>,
 ) -> Result<(GenerateStats, String), GenerateError> {
-
-    if turn_ids.is_empty() { return Err(GenerateError::EmptyPrompt); }
+    if turn_ids.is_empty() {
+        return Err(GenerateError::EmptyPrompt);
+    }
 
     // ── Capacity check against the actual KV cache, not cfg.context_len ────────
-    let n_ctx  = fwd.kv.n_ctx;
-    let used   = fwd.kv.head;
+    let n_ctx = fwd.kv.n_ctx;
+    let used = fwd.kv.head;
     let needed = turn_ids.len() as i64;
     if used + needed > n_ctx {
-        return Err(GenerateError::ContextFull { used: used + needed, max: n_ctx });
+        return Err(GenerateError::ContextFull {
+            used: used + needed,
+            max: n_ctx,
+        });
     }
 
     let prompt_t0 = Instant::now();
 
     if !quiet && trace_enabled() {
         eprint!("[Z.1 DEBUG] turn tokens ({}): ", turn_ids.len());
-        for id in turn_ids.iter() { eprint!("{} ", id); }
+        for id in turn_ids.iter() {
+            eprint!("{} ", id);
+        }
         eprintln!();
     }
     let prompt_token_count = turn_ids.len();
@@ -174,21 +210,36 @@ fn run_generation_inner(
     let mut recent_tokens: Vec<u32> = Vec::new();
     let mut next_token = sample_token(&mut logits, &cfg.sampling, &recent_tokens, &mut rng)?;
     if !quiet && trace_enabled() {
-        eprintln!("[Z.1 DEBUG] first token id: {} decode: {:?}", next_token, tok.decode_one(next_token));
+        eprintln!(
+            "[Z.1 DEBUG] first token id: {} decode: {:?}",
+            next_token,
+            tok.decode_one(next_token)
+        );
     }
 
     let gen_t0 = Instant::now();
     let mut generated = 0usize;
     let stdout = io::stdout();
     let mut text = String::new();
-    if !quiet { println!(); }
+    if !quiet {
+        println!();
+    }
 
     loop {
-        if tok.is_eos(next_token) { break; }
-        if generated >= cfg.max_new_tokens { break; }
-        if fwd.kv.head >= n_ctx { break; } // cache full — stop gracefully
+        if tok.is_eos(next_token) {
+            break;
+        }
+        if generated >= cfg.max_new_tokens {
+            break;
+        }
+        if fwd.kv.head >= n_ctx {
+            break;
+        } // cache full — stop gracefully
 
         if let Some(piece) = tok.decode_one(next_token) {
+            if let Some(cb) = on_token.as_deref_mut() {
+                cb(&piece);
+            }
             if quiet {
                 text.push_str(&piece);
             } else {
@@ -199,7 +250,9 @@ fn run_generation_inner(
         }
 
         recent_tokens.push(next_token);
-        if recent_tokens.len() > 64 { recent_tokens.remove(0); }
+        if recent_tokens.len() > 64 {
+            recent_tokens.remove(0);
+        }
 
         logits = fwd.decode_one(next_token, model)?;
         generated += 1;
@@ -208,10 +261,16 @@ fn run_generation_inner(
     }
 
     let generate_ms = gen_t0.elapsed().as_secs_f64() * 1000.0;
-    let stats = GenerateStats { prompt_tokens: prompt_token_count, generated_tokens: generated,
-        prompt_ms, generate_ms };
+    let stats = GenerateStats {
+        prompt_tokens: prompt_token_count,
+        generated_tokens: generated,
+        prompt_ms,
+        generate_ms,
+    };
 
-    if cfg.print_timing && !quiet { eprintln!("{stats}"); }
+    if cfg.print_timing && !quiet {
+        eprintln!("{stats}");
+    }
     Ok((stats, text))
 }
 
@@ -227,8 +286,9 @@ pub fn generate(
     tok: &Tokenizer,
     cfg: &GenerateConfig,
 ) -> Result<GenerateStats, GenerateError> {
-
-    if prompt.trim().is_empty() { return Err(GenerateError::EmptyPrompt); }
+    if prompt.trim().is_empty() {
+        return Err(GenerateError::EmptyPrompt);
+    }
 
     // Ensure a clean slate regardless of prior state
     fwd.reset_kv();
@@ -238,9 +298,13 @@ pub fn generate(
     } else {
         tok.encode(prompt, cfg.add_bos)
     };
-    if prompt_ids.is_empty() { return Err(GenerateError::EmptyPrompt); }
+    if prompt_ids.is_empty() {
+        return Err(GenerateError::EmptyPrompt);
+    }
     if prompt_ids.len() >= cfg.context_len {
-        return Err(GenerateError::ContextLengthExceeded { max: cfg.context_len });
+        return Err(GenerateError::ContextLengthExceeded {
+            max: cfg.context_len,
+        });
     }
 
     let stats = run_generation(&prompt_ids, fwd, model, tok, cfg)?;
@@ -268,8 +332,9 @@ pub fn generate_turn(
     tok: &Tokenizer,
     cfg: &GenerateConfig,
 ) -> Result<GenerateStats, GenerateError> {
-
-    if user_message.trim().is_empty() { return Err(GenerateError::EmptyPrompt); }
+    if user_message.trim().is_empty() {
+        return Err(GenerateError::EmptyPrompt);
+    }
 
     let turn_ids: Vec<u32> = if turn_number == 0 {
         build_chat_tokens(user_message, tok)
@@ -283,13 +348,16 @@ pub fn generate_turn(
 // ── Llama 3.1 chat template ───────────────────────────────────────────────────
 
 // Special token IDs for Llama 3.1
-const T_BOS:          u32 = 128_000; // <|begin_of_text|>
+const T_BOS: u32 = 128_000; // <|begin_of_text|>
 const T_NEWLINES_LLAMA: u32 = 271; // "\n\n" in llama-3 vocab
 
 /// Which instruct format a model expects, decided by what special tokens
 /// actually exist in its vocab (authoritative, arch-string-independent).
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum ChatFormat { ChatML, Llama3 }
+enum ChatFormat {
+    ChatML,
+    Llama3,
+}
 
 fn detect_chat_format(tok: &Tokenizer) -> ChatFormat {
     if tok.special_id("<|im_start|>").is_some() {
@@ -305,8 +373,8 @@ const SYSTEM_PROMPT: &str = "You are a helpful AI assistant.";
 /// system + user, plus the assistant-open framing, in the model's own format.
 pub fn build_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
     match detect_chat_format(tok) {
-        ChatFormat::ChatML  => build_chatml_first(user_message, tok),
-        ChatFormat::Llama3  => build_llama3_first(user_message, tok),
+        ChatFormat::ChatML => build_chatml_first(user_message, tok),
+        ChatFormat::Llama3 => build_llama3_first(user_message, tok),
     }
 }
 
@@ -314,12 +382,13 @@ pub fn build_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
 /// with NO BOS and NO system prompt. Appended to the existing KV cache.
 pub fn build_followup_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
     let ids = match detect_chat_format(tok) {
-        ChatFormat::ChatML  => build_chatml_followup(user_message, tok),
-        ChatFormat::Llama3  => build_llama3_followup(user_message, tok),
+        ChatFormat::ChatML => build_chatml_followup(user_message, tok),
+        ChatFormat::Llama3 => build_llama3_followup(user_message, tok),
     };
     if std::env::var("Z1_TOK_TRACE").ok().as_deref() == Some("1") {
         eprintln!("[Z.1 TOKTRACE] followup ids ({}): {:?}", ids.len(), ids);
-        let decoded: Vec<String> = ids.iter()
+        let decoded: Vec<String> = ids
+            .iter()
             .map(|&id| tok.decode_one(id).unwrap_or_else(|| format!("<{id}>")))
             .collect();
         eprintln!("[Z.1 TOKTRACE] followup decoded: {:?}", decoded);
@@ -331,8 +400,12 @@ pub fn build_followup_chat_tokens(user_message: &str, tok: &Tokenizer) -> Vec<u3
 // <|im_start|>role\n{content}<|im_end|>\n ... <|im_start|>assistant\n
 
 fn build_chatml_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
-    let im_start = tok.special_id("<|im_start|>").expect("ChatML: <|im_start|> missing");
-    let im_end   = tok.special_id("<|im_end|>").expect("ChatML: <|im_end|> missing");
+    let im_start = tok
+        .special_id("<|im_start|>")
+        .expect("ChatML: <|im_start|> missing");
+    let im_end = tok
+        .special_id("<|im_end|>")
+        .expect("ChatML: <|im_end|> missing");
     let mut ids: Vec<u32> = Vec::new();
 
     // System
@@ -355,8 +428,12 @@ fn build_chatml_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
 }
 
 fn build_chatml_followup(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
-    let im_start = tok.special_id("<|im_start|>").expect("ChatML: <|im_start|> missing");
-    let im_end   = tok.special_id("<|im_end|>").expect("ChatML: <|im_end|> missing");
+    let im_start = tok
+        .special_id("<|im_start|>")
+        .expect("ChatML: <|im_start|> missing");
+    let im_end = tok
+        .special_id("<|im_end|>")
+        .expect("ChatML: <|im_end|> missing");
     let mut ids: Vec<u32> = Vec::new();
 
     // Close the model's previous reply, in case its <|im_end|> was consumed as
@@ -380,8 +457,8 @@ fn build_chatml_followup(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
 
 fn build_llama3_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
     let bos = tok.special_id("<|begin_of_text|>").unwrap_or(128_000);
-    let sh  = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
-    let eh  = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
+    let sh = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
+    let eh = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
     let eot = tok.special_id("<|eot_id|>").unwrap_or(128_009);
     let mut ids: Vec<u32> = Vec::new();
 
@@ -411,8 +488,8 @@ fn build_llama3_first(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
 }
 
 fn build_llama3_followup(user_message: &str, tok: &Tokenizer) -> Vec<u32> {
-    let sh  = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
-    let eh  = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
+    let sh = tok.special_id("<|start_header_id|>").unwrap_or(128_006);
+    let eh = tok.special_id("<|end_header_id|>").unwrap_or(128_007);
     let eot = tok.special_id("<|eot_id|>").unwrap_or(128_009);
     let mut ids: Vec<u32> = Vec::new();
 
@@ -445,14 +522,23 @@ pub fn llama3_chat_template(user_message: &str) -> String {
 // The KV cache itself (in ForwardPass) holds the actual conversation state.
 
 pub struct Session {
-    pub turn_count:  usize,
+    pub turn_count: usize,
     pub context_len: usize,
 }
 
 impl Session {
-    pub fn new(context_len: usize) -> Self { Self { turn_count: 0, context_len } }
-    pub fn is_empty(&self) -> bool { self.turn_count == 0 }
-    pub fn record_turn(&mut self) { self.turn_count += 1; }
+    pub fn new(context_len: usize) -> Self {
+        Self {
+            turn_count: 0,
+            context_len,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.turn_count == 0
+    }
+    pub fn record_turn(&mut self) {
+        self.turn_count += 1;
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -469,8 +555,12 @@ mod tests {
 
     #[test]
     fn generate_stats_display() {
-        let stats = GenerateStats { prompt_tokens: 20, generated_tokens: 100,
-            prompt_ms: 500.0, generate_ms: 71_000.0 };
+        let stats = GenerateStats {
+            prompt_tokens: 20,
+            generated_tokens: 100,
+            prompt_ms: 500.0,
+            generate_ms: 71_000.0,
+        };
         assert!((stats.tokens_per_second() - 100.0 / 71.0).abs() < 0.1);
     }
 

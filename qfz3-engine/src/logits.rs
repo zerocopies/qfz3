@@ -25,14 +25,12 @@ pub enum LogitError {
 impl fmt::Display for LogitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ShapeMismatch { expected, got } =>
-                write!(f, "logit shape mismatch: expected {expected}, got {got}"),
-            Self::EmptyLogits =>
-                write!(f, "logit slice is empty"),
-            Self::InvalidTemperature(t) =>
-                write!(f, "temperature must be > 0.0, got {t}"),
-            Self::InvalidTopP(p) =>
-                write!(f, "top_p must be in (0.0, 1.0], got {p}"),
+            Self::ShapeMismatch { expected, got } => {
+                write!(f, "logit shape mismatch: expected {expected}, got {got}")
+            }
+            Self::EmptyLogits => write!(f, "logit slice is empty"),
+            Self::InvalidTemperature(t) => write!(f, "temperature must be > 0.0, got {t}"),
+            Self::InvalidTopP(p) => write!(f, "top_p must be in (0.0, 1.0], got {p}"),
         }
     }
 }
@@ -52,7 +50,10 @@ impl std::error::Error for LogitError {}
 pub fn rms_norm_inplace(hidden: &mut [f32], weight: &[f32], eps: f32) -> Result<(), LogitError> {
     let n = hidden.len();
     if weight.len() != n {
-        return Err(LogitError::ShapeMismatch { expected: n, got: weight.len() });
+        return Err(LogitError::ShapeMismatch {
+            expected: n,
+            got: weight.len(),
+        });
     }
     if n == 0 {
         return Err(LogitError::EmptyLogits);
@@ -79,7 +80,7 @@ pub fn rms_norm_inplace(hidden: &mut [f32], weight: &[f32], eps: f32) -> Result<
 /// For performance on repeated calls, prefer `project_into` which reuses a buffer.
 pub fn project_to_logits(
     hidden: &[f32],
-    lm_head: &[f32],         // row-major [vocab_size × hidden_size]
+    lm_head: &[f32], // row-major [vocab_size × hidden_size]
     vocab_size: usize,
 ) -> Result<Vec<f32>, LogitError> {
     let hidden_size = hidden.len();
@@ -105,7 +106,10 @@ pub fn project_into(
 ) -> Result<(), LogitError> {
     let hidden_size = hidden.len();
     if out.len() != vocab_size {
-        return Err(LogitError::ShapeMismatch { expected: vocab_size, got: out.len() });
+        return Err(LogitError::ShapeMismatch {
+            expected: vocab_size,
+            got: out.len(),
+        });
     }
 
     // dot product of hidden with each row of lm_head
@@ -156,7 +160,9 @@ impl SamplingConfig {
 /// Apply repeat penalty: divide logits of recently seen token ids by `penalty`.
 /// `recent` should be the last N token ids (N ≤ 64 is typical).
 pub fn apply_repeat_penalty(logits: &mut [f32], recent: &[u32], penalty: f32) {
-    if (penalty - 1.0).abs() < 1e-6 { return; }
+    if (penalty - 1.0).abs() < 1e-6 {
+        return;
+    }
     for &tok in recent {
         let idx = tok as usize;
         if idx < logits.len() {
@@ -188,14 +194,18 @@ pub fn sample_token(
     rng_state: &mut u64,
 ) -> Result<u32, LogitError> {
     cfg.validate()?;
-    if logits.is_empty() { return Err(LogitError::EmptyLogits); }
+    if logits.is_empty() {
+        return Err(LogitError::EmptyLogits);
+    }
 
     // 1. Repeat penalty
     apply_repeat_penalty(logits, recent, cfg.repeat_penalty);
 
     // 2. Temperature scaling
     let inv_temp = 1.0 / cfg.temperature;
-    for l in logits.iter_mut() { *l *= inv_temp; }
+    for l in logits.iter_mut() {
+        *l *= inv_temp;
+    }
 
     // 3. Build index array for top-k / sorting
     let vocab = logits.len();
@@ -205,19 +215,25 @@ pub fn sample_token(
     let k = cfg.top_k.unwrap_or(vocab).min(vocab);
     // Partial sort: bring top-k to the front
     indices.select_nth_unstable_by(k - 1, |&a, &b| {
-        logits[b].partial_cmp(&logits[a]).unwrap_or(std::cmp::Ordering::Equal)
+        logits[b]
+            .partial_cmp(&logits[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     indices.truncate(k);
     // Sort the top-k descending so softmax + nucleus scan is correct
     indices.sort_unstable_by(|&a, &b| {
-        logits[b].partial_cmp(&logits[a]).unwrap_or(std::cmp::Ordering::Equal)
+        logits[b]
+            .partial_cmp(&logits[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // 4. Softmax over the top-k subset (numerically stable)
     let max_l = logits[indices[0]];
     let mut exps: Vec<f32> = indices.iter().map(|&i| (logits[i] - max_l).exp()).collect();
     let sum: f32 = exps.iter().sum();
-    for e in exps.iter_mut() { *e /= sum; }
+    for e in exps.iter_mut() {
+        *e /= sum;
+    }
 
     // 5. Top-p nucleus: keep tokens until cumulative prob ≥ top_p
     let mut cum = 0.0f32;
@@ -234,7 +250,9 @@ pub fn sample_token(
 
     // Re-normalise after truncation
     let nucleus_sum: f32 = exps.iter().sum();
-    for e in exps.iter_mut() { *e /= nucleus_sum; }
+    for e in exps.iter_mut() {
+        *e /= nucleus_sum;
+    }
 
     // 6. Sample with xorshift64
     let r = xorshift64(rng_state);
@@ -271,7 +289,11 @@ pub fn rng_seed_from_time() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos() as u64 + d.as_secs() * 1_000_000_000)
         .unwrap_or(0x517cc1b727220a95);
-    if ns == 0 { 0x517cc1b727220a95 } else { ns }
+    if ns == 0 {
+        0x517cc1b727220a95
+    } else {
+        ns
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -306,7 +328,12 @@ mod tests {
         // With very low temperature the highest-logit token should almost always win
         let mut logits = vec![0.0f32; 10];
         logits[7] = 100.0; // overwhelmingly dominant
-        let cfg = SamplingConfig { temperature: 0.01, top_p: 1.0, top_k: None, repeat_penalty: 1.0 };
+        let cfg = SamplingConfig {
+            temperature: 0.01,
+            top_p: 1.0,
+            top_k: None,
+            repeat_penalty: 1.0,
+        };
         let mut rng = 12345u64;
         let tok = sample_token(&mut logits, &cfg, &[], &mut rng).unwrap();
         assert_eq!(tok, 7);

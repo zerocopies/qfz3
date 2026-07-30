@@ -36,10 +36,11 @@ pub enum TokenizerError {
 impl fmt::Display for TokenizerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingVocab  => write!(f, "GGUF metadata missing tokenizer.ggml.tokens"),
+            Self::MissingVocab => write!(f, "GGUF metadata missing tokenizer.ggml.tokens"),
             Self::MissingMerges => write!(f, "GGUF metadata missing tokenizer.ggml.merges"),
-            Self::VocabSizeMismatch { tokens, scores } =>
-                write!(f, "vocab size mismatch: {tokens} tokens vs {scores} scores"),
+            Self::VocabSizeMismatch { tokens, scores } => {
+                write!(f, "vocab size mismatch: {tokens} tokens vs {scores} scores")
+            }
             Self::InvalidUtf8(e) => write!(f, "UTF-8 decode error: {e}"),
             Self::UnknownToken(s) => write!(f, "unknown token: {s:?}"),
         }
@@ -53,7 +54,7 @@ impl std::error::Error for TokenizerError {}
 /// A single vocab entry.
 #[derive(Debug, Clone)]
 struct VocabEntry {
-    text: Vec<u8>,   // raw bytes (may not be valid UTF-8 for byte tokens)
+    text: Vec<u8>, // raw bytes (may not be valid UTF-8 for byte tokens)
     score: f32,
     token_type: u32, // 1=normal, 2=unknown, 3=control, 6=byte
 }
@@ -90,7 +91,10 @@ impl Tokenizer {
     ) -> Result<Self, TokenizerError> {
         let n = tokens.len();
         if !scores.is_empty() && scores.len() != n {
-            return Err(TokenizerError::VocabSizeMismatch { tokens: n, scores: scores.len() });
+            return Err(TokenizerError::VocabSizeMismatch {
+                tokens: n,
+                scores: scores.len(),
+            });
         }
 
         // Build vocab vec
@@ -98,7 +102,11 @@ impl Tokenizer {
         let mut token_to_id: HashMap<Vec<u8>, u32> = HashMap::with_capacity(n);
 
         for (i, tok_str) in tokens.iter().enumerate() {
-            let score = if !scores.is_empty() && i < scores.len() { scores[i] } else { 0.0 };
+            let score = if !scores.is_empty() && i < scores.len() {
+                scores[i]
+            } else {
+                0.0
+            };
             let token_type = if i < types.len() { types[i] } else { 1 };
 
             // Llama 3.1 uses GPT-style byte tokens like <0x41> for 'A'
@@ -109,7 +117,11 @@ impl Tokenizer {
             };
 
             token_to_id.insert(text.clone(), i as u32);
-            vocab.push(VocabEntry { text, score, token_type });
+            vocab.push(VocabEntry {
+                text,
+                score,
+                token_type,
+            });
         }
 
         // Build merge rank table
@@ -149,20 +161,34 @@ impl Tokenizer {
         }
 
         // Derive stop ids from well-known terminator strings present in vocab.
-        const STOP_STRS: [&str; 6] = ["<|end_of_text|>", "<|eot_id|>",
-            "<|endoftext|>", "<|im_end|>", "</s>", "<|end|>"];
-        let mut stop_ids: Vec<u32> = STOP_STRS.iter()
+        const STOP_STRS: [&str; 6] = [
+            "<|end_of_text|>",
+            "<|eot_id|>",
+            "<|endoftext|>",
+            "<|im_end|>",
+            "</s>",
+            "<|end|>",
+        ];
+        let mut stop_ids: Vec<u32> = STOP_STRS
+            .iter()
             .filter_map(|s| token_to_id.get(s.as_bytes()).copied())
             .collect();
         if stop_ids.is_empty() {
             stop_ids.push(TOKEN_EOS);
             stop_ids.push(TOKEN_EOT);
         }
-        Ok(Self { vocab, token_to_id, merge_rank, stop_ids,
-            byte_to_token })
+        Ok(Self {
+            vocab,
+            token_to_id,
+            merge_rank,
+            stop_ids,
+            byte_to_token,
+        })
     }
 
-    pub fn vocab_size(&self) -> usize { self.vocab.len() }
+    pub fn vocab_size(&self) -> usize {
+        self.vocab.len()
+    }
 
     // ── Encode ───────────────────────────────────────────────────────────────
 
@@ -172,7 +198,9 @@ impl Tokenizer {
     /// Uses GPT-2/tiktoken-style BPE with byte-fallback for unknown characters.
     pub fn encode(&self, text: &str, add_bos: bool) -> Vec<u32> {
         let mut ids: Vec<u32> = Vec::new();
-        if add_bos { ids.push(TOKEN_BOS); }
+        if add_bos {
+            ids.push(TOKEN_BOS);
+        }
 
         // Initial segmentation: each UTF-8 char → token id(s) via vocab lookup
         // or byte fallback
@@ -199,10 +227,14 @@ impl Tokenizer {
         let mut bytes: Vec<u8> = Vec::new();
         for &id in ids {
             // Skip special tokens
-            if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_PAD { continue; }
+            if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_PAD {
+                continue;
+            }
             if let Some(entry) = self.vocab.get(id as usize) {
                 // Control tokens (type 3) → skip
-                if entry.token_type == 3 { continue; }
+                if entry.token_type == 3 {
+                    continue;
+                }
                 bytes.extend_from_slice(&entry.text);
             }
         }
@@ -214,15 +246,21 @@ impl Tokenizer {
     /// Decode a single token id to its string representation.
     /// Useful for streaming output token-by-token.
     pub fn decode_one(&self, id: u32) -> Option<String> {
-        if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_EOT || id == TOKEN_PAD { return None; }
+        if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_EOT || id == TOKEN_PAD {
+            return None;
+        }
         let entry = self.vocab.get(id as usize)?;
-        if entry.token_type == 3 { return None; }
+        if entry.token_type == 3 {
+            return None;
+        }
         let s = String::from_utf8_lossy(&entry.text).into_owned();
         // GPT-2 style: 'Ġ' (U+0120) represents a leading space
         Some(s.replace('\u{0120}', " ").replace('\u{010a}', "\n"))
     }
 
-    pub fn is_eos(&self, id: u32) -> bool { self.stop_ids.contains(&id) }
+    pub fn is_eos(&self, id: u32) -> bool {
+        self.stop_ids.contains(&id)
+    }
 
     /// Resolve a special/added token to its single vocab id by exact string
     /// match, bypassing BPE segmentation. Returns None if the token is not a
@@ -269,7 +307,9 @@ impl Tokenizer {
     /// BPE merge pass: repeatedly merge the highest-priority (lowest-rank) pair.
     fn bpe_merge(&self, ids: &mut Vec<u32>) {
         loop {
-            if ids.len() < 2 { break; }
+            if ids.len() < 2 {
+                break;
+            }
 
             // Find the best merge (lowest rank = highest priority)
             let mut best_rank = u32::MAX;
@@ -285,7 +325,9 @@ impl Tokenizer {
                 }
             }
 
-            if best_pos == usize::MAX { break; } // no more merges possible
+            if best_pos == usize::MAX {
+                break;
+            } // no more merges possible
 
             // Look up merged token id: concatenate the two token strings
             let left_text = &self.vocab[ids[best_pos] as usize].text;
@@ -333,9 +375,8 @@ fn bytes_to_gpt2_unicode(input: &[u8]) -> Vec<u8> {
         let mut n = 0u32;
         let mut b = 0usize;
         while b < 256 {
-            let is_printable = (b >= 33 && b <= 126)
-                || (b >= 161 && b <= 172)
-                || (b >= 174 && b <= 255);
+            let is_printable =
+                (b >= 33 && b <= 126) || (b >= 161 && b <= 172) || (b >= 174 && b <= 255);
             if is_printable {
                 t[b] = b as u32;
             } else {
@@ -368,9 +409,13 @@ fn bytes_to_gpt2_unicode(input: &[u8]) -> Vec<u8> {
 /// Get the number of UTF-8 bytes used by the GPT-2 unicode char starting at `gpt2[i]`.
 #[inline]
 fn gpt2_char_len(first_byte: u8) -> usize {
-    if first_byte < 0x80 { 1 }
-    else if first_byte < 0xE0 { 2 }
-    else { 3 }
+    if first_byte < 0x80 {
+        1
+    } else if first_byte < 0xE0 {
+        2
+    } else {
+        3
+    }
 }
 
 /// Map position `i` in the gpt2-encoded byte slice back to the original input byte.
@@ -378,7 +423,9 @@ fn gpt2_char_len(first_byte: u8) -> usize {
 fn orig_byte_at(orig: &[u8], gpt2: &[u8], gpt2_pos: usize) -> usize {
     let mut g = 0usize;
     for (orig_idx, _) in orig.iter().enumerate() {
-        if g == gpt2_pos { return orig_idx; }
+        if g == gpt2_pos {
+            return orig_idx;
+        }
         g += gpt2_char_len(gpt2[g]);
     }
     0
@@ -393,16 +440,16 @@ mod tests {
     fn minimal_tokenizer() -> Tokenizer {
         // Tiny vocab: " ", "h", "e", "l", "o", "he", "hel", "hell", "hello"
         let tokens = vec![
-            "<unk>".to_string(),   // 0
-            "h".to_string(),       // 1
-            "e".to_string(),       // 2
-            "l".to_string(),       // 3
-            "o".to_string(),       // 4
-            "he".to_string(),      // 5
-            "hel".to_string(),     // 6
-            "hell".to_string(),    // 7
-            "hello".to_string(),   // 8
-            " ".to_string(),       // 9
+            "<unk>".to_string(), // 0
+            "h".to_string(),     // 1
+            "e".to_string(),     // 2
+            "l".to_string(),     // 3
+            "o".to_string(),     // 4
+            "he".to_string(),    // 5
+            "hel".to_string(),   // 6
+            "hell".to_string(),  // 7
+            "hello".to_string(), // 8
+            " ".to_string(),     // 9
         ];
         let scores: Vec<f32> = vec![0.0; tokens.len()];
         let types: Vec<u32> = vec![2, 1, 1, 1, 1, 1, 1, 1, 1, 1];

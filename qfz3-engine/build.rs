@@ -6,12 +6,15 @@ fn main() {
         .expect("CARGO_MANIFEST_DIR not set");
 
     let llama_dir = workspace_root.join("vendor/llama.cpp");
-    let ggml_src  = llama_dir.join("ggml/src");
-    let ggml_inc  = llama_dir.join("ggml/include");
+    let ggml_src = llama_dir.join("ggml/src");
+    let ggml_inc = llama_dir.join("ggml/include");
     let llama_inc = llama_dir.join("include");
 
     if !ggml_src.exists() {
-        panic!("[qfz3] vendor/llama.cpp/ggml/src not found at {:?}!", llama_dir);
+        panic!(
+            "[qfz3] vendor/llama.cpp/ggml/src not found at {:?}!",
+            llama_dir
+        );
     }
 
     // Golden's exact b3534 whitelist. Compiled as SEPARATE translation

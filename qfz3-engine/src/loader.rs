@@ -4,7 +4,6 @@
 /// Wraps the mmap region as a ggml CPU backend buffer and points
 /// each tensor's data pointer directly into the mmap.
 /// No heap allocation for weights.
-
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::Path;
@@ -12,10 +11,8 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 
 use crate::ggml_ffi::{
-    self as ffi,
-    ggml_backend_buffer, ggml_backend_buffer_free,
-    ggml_backend_cpu_buffer_from_ptr, ggml_backend_tensor_alloc,
-    ggml_context, ggml_free, ggml_init, ggml_new_tensor, ggml_set_name,
+    self as ffi, ggml_backend_buffer, ggml_backend_buffer_free, ggml_backend_cpu_buffer_from_ptr,
+    ggml_backend_tensor_alloc, ggml_context, ggml_free, ggml_init, ggml_new_tensor, ggml_set_name,
     GgmlInitParams, GgmlType,
 };
 use crate::gguf::GgufHeader;
@@ -23,10 +20,10 @@ use crate::mapper::FileMapper;
 
 pub struct MappedModel {
     pub file_mapper: FileMapper,
-    pub ggml_ctx:    *mut ggml_context,
-    pub weight_buf:  *mut ggml_backend_buffer,
-    pub tensors:     HashMap<String, *mut ffi::ggml_tensor>,
-    pub header:      GgufHeader,
+    pub ggml_ctx: *mut ggml_context,
+    pub weight_buf: *mut ggml_backend_buffer,
+    pub tensors: HashMap<String, *mut ffi::ggml_tensor>,
+    pub header: GgufHeader,
 }
 
 unsafe impl Send for MappedModel {}
@@ -35,26 +32,30 @@ unsafe impl Sync for MappedModel {}
 impl MappedModel {
     pub fn load(path: &Path) -> Result<Self> {
         // 1. Parse header (no weights)
-        let header = GgufHeader::from_file(path)
-            .context("Failed to parse GGUF header")?;
+        let header = GgufHeader::from_file(path).context("Failed to parse GGUF header")?;
 
-        log::info!("[Z.1 Loader] GGUF v{}: {} tensors, data offset={}",
-            header.version, header.n_tensors, header.data_offset);
+        log::info!(
+            "[Z.1 Loader] GGUF v{}: {} tensors, data offset={}",
+            header.version,
+            header.n_tensors,
+            header.data_offset
+        );
 
         // 2. Memory-map the full file
-        let file_mapper = FileMapper::open(path)
-            .context("Failed to mmap model file")?;
+        let file_mapper = FileMapper::open(path).context("Failed to mmap model file")?;
 
         let mmap_base = file_mapper.ptr.as_ptr() as usize;
         let file_size = file_mapper.total_size;
 
-        log::info!("[Z.1 Loader] mmap base=0x{:x}, size={:.2} GiB",
-            mmap_base, file_size as f64 / (1u64 << 30) as f64);
+        log::info!(
+            "[Z.1 Loader] mmap base=0x{:x}, size={:.2} GiB",
+            mmap_base,
+            file_size as f64 / (1u64 << 30) as f64
+        );
 
         // 3. Wrap mmap as ggml CPU buffer — zero copy, zero heap
-        let weight_buf = unsafe {
-            ggml_backend_cpu_buffer_from_ptr(file_mapper.ptr.as_ptr(), file_size)
-        };
+        let weight_buf =
+            unsafe { ggml_backend_cpu_buffer_from_ptr(file_mapper.ptr.as_ptr(), file_size) };
         if weight_buf.is_null() {
             bail!("[Z.1 Loader] ggml_backend_cpu_buffer_from_ptr returned null");
         }
@@ -64,9 +65,9 @@ impl MappedModel {
         let desc_mem = (header.n_tensors as usize + 16) * 512;
         let ggml_ctx = unsafe {
             ggml_init(GgmlInitParams {
-                mem_size:   desc_mem,
+                mem_size: desc_mem,
                 mem_buffer: std::ptr::null_mut(),
-                no_alloc:   true,
+                no_alloc: true,
             })
         };
         if ggml_ctx.is_null() {
@@ -80,10 +81,14 @@ impl MappedModel {
 
         for ti in &header.tensors {
             let tensor_addr = data_base + ti.offset as usize;
-            let ggml_type   = GgmlType::from(ti.ggml_type);
+            let ggml_type = GgmlType::from(ti.ggml_type);
 
             if ggml_type == GgmlType::Unknown {
-                log::warn!("[Z.1 Loader] Unknown type {} for '{}', skipping.", ti.ggml_type, ti.name);
+                log::warn!(
+                    "[Z.1 Loader] Unknown type {} for '{}', skipping.",
+                    ti.ggml_type,
+                    ti.name
+                );
                 skipped += 1;
                 continue;
             }
@@ -111,20 +116,25 @@ impl MappedModel {
 
             // Zero-copy injection: tensor->data = mmap_base + data_offset + tensor_offset
             unsafe {
-                ggml_backend_tensor_alloc(
-                    weight_buf,
-                    tensor,
-                    tensor_addr as *mut std::ffi::c_void,
-                );
+                ggml_backend_tensor_alloc(weight_buf, tensor, tensor_addr as *mut std::ffi::c_void);
             }
 
             tensors.insert(ti.name.clone(), tensor);
         }
 
-        log::info!("[Z.1 Loader] {} tensors loaded ({} skipped). Heap for weights: 0 bytes.",
-            tensors.len(), skipped);
+        log::info!(
+            "[Z.1 Loader] {} tensors loaded ({} skipped). Heap for weights: 0 bytes.",
+            tensors.len(),
+            skipped
+        );
 
-        Ok(MappedModel { file_mapper, ggml_ctx, weight_buf, tensors, header })
+        Ok(MappedModel {
+            file_mapper,
+            ggml_ctx,
+            weight_buf,
+            tensors,
+            header,
+        })
     }
 
     pub fn tensor(&self, name: &str) -> Option<*mut ffi::ggml_tensor> {

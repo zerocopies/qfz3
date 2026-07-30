@@ -19,7 +19,11 @@ mod gguf_stress {
 
     impl GgufBuilder {
         fn new(version: u32) -> Self {
-            Self { version, metadata: Vec::new(), tensors: Vec::new() }
+            Self {
+                version,
+                metadata: Vec::new(),
+                tensors: Vec::new(),
+            }
         }
 
         fn add_meta_u32(mut self, key: &str, val: u32) -> Self {
@@ -48,7 +52,8 @@ mod gguf_stress {
         }
 
         fn add_meta_string(mut self, key: &str, val: &str) -> Self {
-            self.metadata.push((key.to_string(), GgufValue::String(val.to_string())));
+            self.metadata
+                .push((key.to_string(), GgufValue::String(val.to_string())));
             self
         }
 
@@ -83,12 +88,14 @@ mod gguf_stress {
         }
 
         fn add_meta_array(mut self, key: &str, elems: Vec<GgufValue>) -> Self {
-            self.metadata.push((key.to_string(), GgufValue::Array(elems)));
+            self.metadata
+                .push((key.to_string(), GgufValue::Array(elems)));
             self
         }
 
         fn add_tensor(mut self, name: &str, dims: Vec<u64>, ggml_type: u32, offset: u64) -> Self {
-            self.tensors.push((name.to_string(), dims, ggml_type, offset));
+            self.tensors
+                .push((name.to_string(), dims, ggml_type, offset));
             self
         }
 
@@ -130,9 +137,17 @@ mod gguf_stress {
                 buf.extend_from_slice(&offset.to_le_bytes());
             }
             // Pad to 32-byte alignment
-            let alignment = self.metadata.iter()
+            let alignment = self
+                .metadata
+                .iter()
                 .find(|(k, _)| k == "general.alignment")
-                .and_then(|(_, v)| if let GgufValue::U32(a) = v { Some(*a) } else { None })
+                .and_then(|(_, v)| {
+                    if let GgufValue::U32(a) = v {
+                        Some(*a)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or(32) as usize;
             let pos = buf.len();
             let aligned = (pos + alignment - 1) / alignment * alignment;
@@ -150,23 +165,58 @@ mod gguf_stress {
 
     fn write_value(buf: &mut Vec<u8>, val: &GgufValue, version: u32) {
         match val {
-            GgufValue::U8(v) => { buf.extend_from_slice(&0u32.to_le_bytes()); buf.push(*v); }
-            GgufValue::I8(v) => { buf.extend_from_slice(&1u32.to_le_bytes()); buf.push(*v as u8); }
-            GgufValue::U16(v) => { buf.extend_from_slice(&2u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::I16(v) => { buf.extend_from_slice(&3u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::U32(v) => { buf.extend_from_slice(&4u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::I32(v) => { buf.extend_from_slice(&5u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::F32(v) => { buf.extend_from_slice(&6u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::Bool(v) => { buf.extend_from_slice(&7u32.to_le_bytes()); buf.push(if *v { 1 } else { 0 }); }
-            GgufValue::String(s) => { buf.extend_from_slice(&8u32.to_le_bytes()); write_string(buf, s); }
+            GgufValue::U8(v) => {
+                buf.extend_from_slice(&0u32.to_le_bytes());
+                buf.push(*v);
+            }
+            GgufValue::I8(v) => {
+                buf.extend_from_slice(&1u32.to_le_bytes());
+                buf.push(*v as u8);
+            }
+            GgufValue::U16(v) => {
+                buf.extend_from_slice(&2u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::I16(v) => {
+                buf.extend_from_slice(&3u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::U32(v) => {
+                buf.extend_from_slice(&4u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::I32(v) => {
+                buf.extend_from_slice(&5u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::F32(v) => {
+                buf.extend_from_slice(&6u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::Bool(v) => {
+                buf.extend_from_slice(&7u32.to_le_bytes());
+                buf.push(if *v { 1 } else { 0 });
+            }
+            GgufValue::String(s) => {
+                buf.extend_from_slice(&8u32.to_le_bytes());
+                write_string(buf, s);
+            }
             GgufValue::Array(arr) => {
                 buf.extend_from_slice(&9u32.to_le_bytes());
                 if let Some(first) = arr.first() {
                     let elem_type_id = match first {
-                        GgufValue::U8(_) => 0u32, GgufValue::I8(_) => 1, GgufValue::U16(_) => 2,
-                        GgufValue::I16(_) => 3, GgufValue::U32(_) => 4, GgufValue::I32(_) => 5,
-                        GgufValue::F32(_) => 6, GgufValue::Bool(_) => 7, GgufValue::String(_) => 8,
-                        GgufValue::Array(_) => 9, GgufValue::U64(_) => 10, GgufValue::I64(_) => 11,
+                        GgufValue::U8(_) => 0u32,
+                        GgufValue::I8(_) => 1,
+                        GgufValue::U16(_) => 2,
+                        GgufValue::I16(_) => 3,
+                        GgufValue::U32(_) => 4,
+                        GgufValue::I32(_) => 5,
+                        GgufValue::F32(_) => 6,
+                        GgufValue::Bool(_) => 7,
+                        GgufValue::String(_) => 8,
+                        GgufValue::Array(_) => 9,
+                        GgufValue::U64(_) => 10,
+                        GgufValue::I64(_) => 11,
                         GgufValue::F64(_) => 12,
                     };
                     buf.extend_from_slice(&elem_type_id.to_le_bytes());
@@ -196,9 +246,18 @@ mod gguf_stress {
                     }
                 }
             }
-            GgufValue::U64(v) => { buf.extend_from_slice(&10u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::I64(v) => { buf.extend_from_slice(&11u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
-            GgufValue::F64(v) => { buf.extend_from_slice(&12u32.to_le_bytes()); buf.extend_from_slice(&v.to_le_bytes()); }
+            GgufValue::U64(v) => {
+                buf.extend_from_slice(&10u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::I64(v) => {
+                buf.extend_from_slice(&11u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            GgufValue::F64(v) => {
+                buf.extend_from_slice(&12u32.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
         }
     }
 
@@ -243,7 +302,10 @@ mod gguf_stress {
         let data = vec![0x47, 0x47, 0x55, 0x46, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let result = parse_buf(&data);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unsupported GGUF version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported GGUF version"));
     }
 
     #[test]
@@ -339,10 +401,27 @@ mod gguf_stress {
         let header = parse_buf(&data).unwrap();
         assert_eq!(header.metadata.len(), 13);
         assert_eq!(header.metadata.get("test.u8").unwrap().as_u32(), None);
-        assert_eq!(*header.metadata.get("test.u32").unwrap(), GgufValue::U32(u32::MAX));
-        assert_eq!(*header.metadata.get("test.bool_true").unwrap(), GgufValue::Bool(true));
-        assert_eq!(*header.metadata.get("test.bool_false").unwrap(), GgufValue::Bool(false));
-        assert_eq!(header.metadata.get("test.string").unwrap().as_str().unwrap(), "hello world");
+        assert_eq!(
+            *header.metadata.get("test.u32").unwrap(),
+            GgufValue::U32(u32::MAX)
+        );
+        assert_eq!(
+            *header.metadata.get("test.bool_true").unwrap(),
+            GgufValue::Bool(true)
+        );
+        assert_eq!(
+            *header.metadata.get("test.bool_false").unwrap(),
+            GgufValue::Bool(false)
+        );
+        assert_eq!(
+            header
+                .metadata
+                .get("test.string")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "hello world"
+        );
     }
 
     // ── Test: Array metadata ───────────────────────────────────────────────────
@@ -350,9 +429,10 @@ mod gguf_stress {
     #[test]
     fn gguf_array_u32() {
         let data = GgufBuilder::new(2)
-            .add_meta_array("test.arr", vec![
-                GgufValue::U32(10), GgufValue::U32(20), GgufValue::U32(30),
-            ])
+            .add_meta_array(
+                "test.arr",
+                vec![GgufValue::U32(10), GgufValue::U32(20), GgufValue::U32(30)],
+            )
             .build();
         let header = parse_buf(&data).unwrap();
         match header.metadata.get("test.arr").unwrap() {
@@ -369,10 +449,13 @@ mod gguf_stress {
     #[test]
     fn gguf_array_string() {
         let data = GgufBuilder::new(2)
-            .add_meta_array("test.str_arr", vec![
-                GgufValue::String("alpha".into()),
-                GgufValue::String("beta".into()),
-            ])
+            .add_meta_array(
+                "test.str_arr",
+                vec![
+                    GgufValue::String("alpha".into()),
+                    GgufValue::String("beta".into()),
+                ],
+            )
             .build();
         let header = parse_buf(&data).unwrap();
         match header.metadata.get("test.str_arr").unwrap() {
@@ -538,7 +621,12 @@ mod gguf_stress {
     fn gguf_many_tensors() {
         let mut builder = GgufBuilder::new(2);
         for i in 0..200 {
-            builder = builder.add_tensor(&format!("blk.{}.weight", i), vec![64, 64], 12, (i * 4096) as u64);
+            builder = builder.add_tensor(
+                &format!("blk.{}.weight", i),
+                vec![64, 64],
+                12,
+                (i * 4096) as u64,
+            );
         }
         let data = builder.build();
         let header = parse_buf(&data).unwrap();
@@ -605,14 +693,24 @@ mod gguf_stress {
     #[test]
     fn gguf_tensor_zero_dims() {
         use qfz3::gguf::TensorInfo;
-        let ti = TensorInfo { name: "empty".into(), dims: vec![], ggml_type: 0, offset: 0 };
+        let ti = TensorInfo {
+            name: "empty".into(),
+            dims: vec![],
+            ggml_type: 0,
+            offset: 0,
+        };
         assert_eq!(ti.n_elements(), 1);
     }
 
     #[test]
     fn gguf_tensor_single_dim() {
         use qfz3::gguf::TensorInfo;
-        let ti = TensorInfo { name: "vec".into(), dims: vec![32000], ggml_type: 0, offset: 0 };
+        let ti = TensorInfo {
+            name: "vec".into(),
+            dims: vec![32000],
+            ggml_type: 0,
+            offset: 0,
+        };
         assert_eq!(ti.n_elements(), 32000);
     }
 
@@ -665,7 +763,7 @@ mod gguf_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod tokenizer_stress {
-    use qfz3::tokenizer::{Tokenizer, TOKEN_BOS, TOKEN_EOS, TOKEN_PAD, TOKEN_EOT};
+    use qfz3::tokenizer::{Tokenizer, TOKEN_BOS, TOKEN_EOS, TOKEN_EOT, TOKEN_PAD};
 
     /// Build a realistic-ish tokenizer with 256 byte tokens + some merged tokens
     fn build_stress_tokenizer() -> Tokenizer {
@@ -686,11 +784,11 @@ mod tokenizer_stress {
         }
 
         // Some common ASCII tokens
-        let common = [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i",
-                       "j", "k", "l", "m", "n", "o", "p", "q", "r", "s",
-                       "t", "u", "v", "w", "x", "y", "z",
-                       "the", "is", "and", "of", "to", "in",
-                       "hello", "world", "test", "space", "line"];
+        let common = [
+            " ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
+            "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "the", "is", "and", "of", "to", "in",
+            "hello", "world", "test", "space", "line",
+        ];
         for c in &common {
             tokens.push(c.to_string());
             scores.push(-0.5);
@@ -859,8 +957,7 @@ mod tokenizer_stress {
     fn stress_many_encode_decode_roundtrips() {
         let t = build_stress_tokenizer();
         let strings = vec![
-            "hello", "world", "the", "space", "line",
-            "test", "a", "b", "c",
+            "hello", "world", "the", "space", "line", "test", "a", "b", "c",
         ];
         for s in &strings {
             let ids = t.encode_no_bos(s);
@@ -885,7 +982,12 @@ mod tokenizer_stress {
         // "hello" should merge: h->e->l->l->o -> hel->lo -> hello
         let ids = t.encode_no_bos("hello");
         // With our merge table, "hello" should be a single token
-        assert_eq!(ids.len(), 1, "Expected 'hello' to merge to single token, got {:?}", ids);
+        assert_eq!(
+            ids.len(),
+            1,
+            "Expected 'hello' to merge to single token, got {:?}",
+            ids
+        );
     }
 
     #[test]
@@ -978,7 +1080,13 @@ mod logits_stress {
         rms_norm_inplace(&mut h, &w, 1e-5).unwrap();
         // All elements should be identical after normalization with uniform weight
         for i in 1..h.len() {
-            assert!((h[0] - h[i]).abs() < 1e-5, "h[0]={} h[{}]={}", h[0], i, h[i]);
+            assert!(
+                (h[0] - h[i]).abs() < 1e-5,
+                "h[0]={} h[{}]={}",
+                h[0],
+                i,
+                h[i]
+            );
         }
     }
 
@@ -1081,11 +1189,7 @@ mod logits_stress {
     #[test]
     fn stress_project_to_logits_identity() {
         let hidden = vec![1.0f32, 0.0, 0.0];
-        let lm_head = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
+        let lm_head = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let logits = project_to_logits(&hidden, &lm_head, 3).unwrap();
         assert!((logits[0] - 1.0).abs() < 1e-6);
         assert!((logits[1] - 0.0).abs() < 1e-6);
@@ -1127,20 +1231,14 @@ mod logits_stress {
     #[test]
     fn stress_project_into_reuse_buffer() {
         let hidden = vec![1.0f32, 2.0, 3.0];
-        let lm_head = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-        ];
+        let lm_head = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let mut out = vec![0.0f32; 2];
         project_into(&hidden, &lm_head, 2, &mut out).unwrap();
         assert!((out[0] - 1.0).abs() < 1e-6);
         assert!((out[1] - 2.0).abs() < 1e-6);
 
         // Reuse buffer
-        let lm_head2 = vec![
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
+        let lm_head2 = vec![0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         project_into(&hidden, &lm_head2, 2, &mut out).unwrap();
         assert!((out[0] - 2.0).abs() < 1e-6);
         assert!((out[1] - 3.0).abs() < 1e-6);
@@ -1300,7 +1398,9 @@ mod logits_stress {
         for _ in 0..1000 {
             let mut l = logits.clone();
             let tok = sample_token(&mut l, &cfg, &[], &mut rng).unwrap();
-            if tok == 50 { got_dominant += 1; }
+            if tok == 50 {
+                got_dominant += 1;
+            }
         }
         // Should still get the dominant token sometimes, but not always
         assert!(got_dominant > 0 && got_dominant < 1000);
@@ -1322,10 +1422,16 @@ mod logits_stress {
         for _ in 0..1000 {
             let mut l = logits.clone();
             let tok = sample_token(&mut l, &cfg, &recent, &mut rng).unwrap();
-            if tok == 0 { got_zero += 1; }
+            if tok == 0 {
+                got_zero += 1;
+            }
         }
         // With heavy repeat penalty, token 0 should be sampled much less often
-        assert!(got_zero < 500, "Repeat penalty ineffective: got_zero={}", got_zero);
+        assert!(
+            got_zero < 500,
+            "Repeat penalty ineffective: got_zero={}",
+            got_zero
+        );
     }
 
     #[test]
@@ -1428,13 +1534,19 @@ mod logits_stress {
         for _ in 0..10000 {
             let a = {
                 let mut x = rng1;
-                x ^= x << 13; x ^= x >> 7; x ^= x << 17;
-                rng1 = x; x
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                rng1 = x;
+                x
             };
             let b = {
                 let mut x = rng2;
-                x ^= x << 13; x ^= x >> 7; x ^= x << 17;
-                rng2 = x; x
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                rng2 = x;
+                x
             };
             assert_eq!(a, b);
         }
@@ -1534,16 +1646,36 @@ mod generate_stress {
 
     fn stress_tokenizer() -> Tokenizer {
         let tokens = vec![
-            "<unk>".to_string(), "h".into(), "e".into(), "l".into(), "o".into(),
-            "he".into(), "hel".into(), "hell".into(), "hello".into(), " ".into(),
-            "w".into(), "r".into(), "d".into(), "world".into(),
-            "t".into(), "s".into(), "a".into(), "n".into(),
+            "<unk>".to_string(),
+            "h".into(),
+            "e".into(),
+            "l".into(),
+            "o".into(),
+            "he".into(),
+            "hel".into(),
+            "hell".into(),
+            "hello".into(),
+            " ".into(),
+            "w".into(),
+            "r".into(),
+            "d".into(),
+            "world".into(),
+            "t".into(),
+            "s".into(),
+            "a".into(),
+            "n".into(),
         ];
         let scores = vec![0.0; tokens.len()];
         let types = vec![2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
         let merges = vec![
-            "h e".into(), "he l".into(), "hel l".into(), "hell o".into(),
-            "w o".into(), "wo r".into(), "wor l".into(), "worl d".into(),
+            "h e".into(),
+            "he l".into(),
+            "hel l".into(),
+            "hell o".into(),
+            "w o".into(),
+            "wo r".into(),
+            "wor l".into(),
+            "worl d".into(),
         ];
         Tokenizer::from_gguf_parts(&tokens, &scores, &types, &merges).unwrap()
     }
@@ -1709,7 +1841,10 @@ mod generate_stress {
         let errors = vec![
             GenerateError::EmptyPrompt,
             GenerateError::ContextLengthExceeded { max: 4096 },
-            GenerateError::ContextFull { used: 5000, max: 4096 },
+            GenerateError::ContextFull {
+                used: 5000,
+                max: 4096,
+            },
         ];
         for e in &errors {
             let s = format!("{}", e);
@@ -1735,7 +1870,7 @@ mod generate_stress {
         assert!(ids.contains(&128_006)); // T_START_HEADER
         assert!(ids.contains(&128_007)); // T_END_HEADER
         assert!(ids.contains(&128_009)); // T_EOT
-        assert!(ids.contains(&271));     // T_NEWLINES
+        assert!(ids.contains(&271)); // T_NEWLINES
     }
 
     #[test]
@@ -1817,8 +1952,8 @@ mod mapper_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod concurrency_stress {
-    use qfz3::logits::*;
     use qfz3::generate::*;
+    use qfz3::logits::*;
     use qfz3::tokenizer::*;
     use std::sync::Arc;
     use std::thread;
@@ -1854,16 +1989,18 @@ mod concurrency_stress {
 
     #[test]
     fn stress_parallel_session_tracking() {
-        let handles: Vec<_> = (0..16).map(|i| {
-            thread::spawn(move || {
-                let mut session = Session::new(4096);
-                for _ in 0..1000 {
-                    session.record_turn();
-                }
-                assert_eq!(session.turn_count, 1000);
-                i // return thread id to verify completion
+        let handles: Vec<_> = (0..16)
+            .map(|i| {
+                thread::spawn(move || {
+                    let mut session = Session::new(4096);
+                    for _ in 0..1000 {
+                        session.record_turn();
+                    }
+                    assert_eq!(session.turn_count, 1000);
+                    i // return thread id to verify completion
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1872,20 +2009,22 @@ mod concurrency_stress {
 
     #[test]
     fn stress_parallel_stats_computation() {
-        let handles: Vec<_> = (0..8).map(|i| {
-            thread::spawn(move || {
-                for j in 0..1000 {
-                    let stats = GenerateStats {
-                        prompt_tokens: i * 100 + j,
-                        generated_tokens: i * 200 + j,
-                        prompt_ms: (i as f64) * 100.0 + (j as f64),
-                        generate_ms: (i as f64) * 1000.0 + (j as f64),
-                    };
-                    let _tps = stats.tokens_per_second();
-                    let _display = format!("{stats}");
-                }
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                thread::spawn(move || {
+                    for j in 0..1000 {
+                        let stats = GenerateStats {
+                            prompt_tokens: i * 100 + j,
+                            generated_tokens: i * 200 + j,
+                            prompt_ms: (i as f64) * 100.0 + (j as f64),
+                            generate_ms: (i as f64) * 1000.0 + (j as f64),
+                        };
+                        let _tps = stats.tokens_per_second();
+                        let _display = format!("{stats}");
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1894,18 +2033,20 @@ mod concurrency_stress {
 
     #[test]
     fn stress_parallel_rms_norm() {
-        let handles: Vec<_> = (0..8).map(|i| {
-            thread::spawn(move || {
-                for _ in 0..1000 {
-                    let mut h: Vec<f32> = (0..256).map(|j| (i * 256 + j) as f32).collect();
-                    let w = vec![1.0f32; 256];
-                    rms_norm_inplace(&mut h, &w, 1e-5).unwrap();
-                    for v in &h {
-                        assert!(v.is_finite());
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                thread::spawn(move || {
+                    for _ in 0..1000 {
+                        let mut h: Vec<f32> = (0..256).map(|j| (i * 256 + j) as f32).collect();
+                        let w = vec![1.0f32; 256];
+                        rms_norm_inplace(&mut h, &w, 1e-5).unwrap();
+                        for v in &h {
+                            assert!(v.is_finite());
+                        }
                     }
-                }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1919,16 +2060,18 @@ mod concurrency_stress {
         let hidden = Arc::new(hidden);
         let lm_head = Arc::new(lm_head);
 
-        let handles: Vec<_> = (0..8).map(|_| {
-            let hidden = hidden.clone();
-            let lm_head = lm_head.clone();
-            thread::spawn(move || {
-                for _ in 0..100 {
-                    let logits = project_to_logits(&hidden, &lm_head, 1000).unwrap();
-                    assert_eq!(logits.len(), 1000);
-                }
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let hidden = hidden.clone();
+                let lm_head = lm_head.clone();
+                thread::spawn(move || {
+                    for _ in 0..100 {
+                        let logits = project_to_logits(&hidden, &lm_head, 1000).unwrap();
+                        assert_eq!(logits.len(), 1000);
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1938,29 +2081,38 @@ mod concurrency_stress {
     #[test]
     fn stress_parallel_encode_decode() {
         let tokens = vec![
-            "<unk>".to_string(), "a".into(), "b".into(), "c".into(), "d".into(),
-            "ab".into(), "abc".into(), "abcd".into(),
-            " ".into(), "x".into(), "y".into(), "z".into(),
+            "<unk>".to_string(),
+            "a".into(),
+            "b".into(),
+            "c".into(),
+            "d".into(),
+            "ab".into(),
+            "abc".into(),
+            "abcd".into(),
+            " ".into(),
+            "x".into(),
+            "y".into(),
+            "z".into(),
         ];
         let scores = vec![0.0; tokens.len()];
         let types = vec![2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-        let merges = vec![
-            "a b".to_string(), "ab c".to_string(), "abc d".to_string(),
-        ];
+        let merges = vec!["a b".to_string(), "ab c".to_string(), "abc d".to_string()];
         let tok = Arc::new(Tokenizer::from_gguf_parts(&tokens, &scores, &types, &merges).unwrap());
 
-        let handles: Vec<_> = (0..16).map(|i| {
-            let tok = tok.clone();
-            thread::spawn(move || {
-                let texts = vec!["abc", "abcd", "a", "b", "c", "d", "ab"];
-                for j in 0..500 {
-                    let text = texts[j % texts.len()];
-                    let ids = tok.encode_no_bos(text);
-                    let decoded = tok.decode(&ids);
-                    assert_eq!(decoded, text, "Thread {} iteration {}", i, j);
-                }
+        let handles: Vec<_> = (0..16)
+            .map(|i| {
+                let tok = tok.clone();
+                thread::spawn(move || {
+                    let texts = vec!["abc", "abcd", "a", "b", "c", "d", "ab"];
+                    for j in 0..500 {
+                        let text = texts[j % texts.len()];
+                        let ids = tok.encode_no_bos(text);
+                        let decoded = tok.decode(&ids);
+                        assert_eq!(decoded, text, "Thread {} iteration {}", i, j);
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1969,16 +2121,18 @@ mod concurrency_stress {
 
     #[test]
     fn stress_parallel_repeat_penalty() {
-        let handles: Vec<_> = (0..8).map(|i| {
-            thread::spawn(move || {
-                for _ in 0..1000 {
-                    let mut logits = vec![1.0f32; 1000];
-                    logits[i * 100] = 10.0;
-                    let recent: Vec<u32> = (0..10).map(|j| (i * 10 + j) as u32).collect();
-                    apply_repeat_penalty(&mut logits, &recent, 2.0);
-                }
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                thread::spawn(move || {
+                    for _ in 0..1000 {
+                        let mut logits = vec![1.0f32; 1000];
+                        logits[i * 100] = 10.0;
+                        let recent: Vec<u32> = (0..10).map(|j| (i * 10 + j) as u32).collect();
+                        apply_repeat_penalty(&mut logits, &recent, 2.0);
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
@@ -1996,11 +2150,21 @@ mod ggml_type_stress {
     #[test]
     fn stress_all_known_types() {
         let known = vec![
-            (0, GgmlType::F32), (1, GgmlType::F16), (2, GgmlType::Q4_0),
-            (3, GgmlType::Q4_1), (6, GgmlType::Q5_0), (7, GgmlType::Q5_1),
-            (8, GgmlType::Q8_0), (9, GgmlType::Q8_1), (10, GgmlType::Q2_K),
-            (11, GgmlType::Q3_K), (12, GgmlType::Q4_K), (13, GgmlType::Q5_K),
-            (14, GgmlType::Q6_K), (15, GgmlType::Q8_K), (26, GgmlType::I32),
+            (0, GgmlType::F32),
+            (1, GgmlType::F16),
+            (2, GgmlType::Q4_0),
+            (3, GgmlType::Q4_1),
+            (6, GgmlType::Q5_0),
+            (7, GgmlType::Q5_1),
+            (8, GgmlType::Q8_0),
+            (9, GgmlType::Q8_1),
+            (10, GgmlType::Q2_K),
+            (11, GgmlType::Q3_K),
+            (12, GgmlType::Q4_K),
+            (13, GgmlType::Q5_K),
+            (14, GgmlType::Q6_K),
+            (15, GgmlType::Q8_K),
+            (26, GgmlType::I32),
             (30, GgmlType::BF16),
         ];
         for (id, expected) in known {
@@ -2095,9 +2259,13 @@ mod fuzz_stress {
         }
 
         // Add some common words
-        let words = ["the", "a", "an", "is", "are", "was", "hello", "world", "test"];
+        let words = [
+            "the", "a", "an", "is", "are", "was", "hello", "world", "test",
+        ];
         for w in &words {
-            if tokens.len() >= vocab_size { break; }
+            if tokens.len() >= vocab_size {
+                break;
+            }
             let s = w.to_string();
             if !seen.contains_key(&s) {
                 let id = tokens.len();
@@ -2110,7 +2278,8 @@ mod fuzz_stress {
 
         // Generate random merges
         let mut merges = Vec::new();
-        let word_tokens: Vec<String> = tokens[1..].iter()
+        let word_tokens: Vec<String> = tokens[1..]
+            .iter()
             .filter(|t| t.len() > 1 && !t.starts_with("<0x"))
             .cloned()
             .collect();
@@ -2153,7 +2322,10 @@ mod fuzz_stress {
     fn fuzz_random_logits_sampling() {
         let mut rng = 12345u64;
         let next_rand = |rng: &mut u64| -> u64 {
-            *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17; *rng
+            *rng ^= *rng << 13;
+            *rng ^= *rng >> 7;
+            *rng ^= *rng << 17;
+            *rng
         };
 
         for trial in 0..100 {
@@ -2176,7 +2348,13 @@ mod fuzz_stress {
             };
 
             let tok = sample_token(&mut logits, &cfg, &[], &mut rng).unwrap();
-            assert!((tok as usize) < vocab_size, "trial {}: tok={} vocab={}", trial, tok, vocab_size);
+            assert!(
+                (tok as usize) < vocab_size,
+                "trial {}: tok={} vocab={}",
+                trial,
+                tok,
+                vocab_size
+            );
         }
     }
 
@@ -2184,7 +2362,9 @@ mod fuzz_stress {
     fn fuzz_rms_norm_random_vectors() {
         let mut rng = 42u64;
         let next_rand = |rng: &mut u64| -> f32 {
-            *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17;
+            *rng ^= *rng << 13;
+            *rng ^= *rng >> 7;
+            *rng ^= *rng << 17;
             ((*rng as f32) / (u64::MAX as f32)) * 2.0 - 1.0
         };
 
@@ -2210,7 +2390,9 @@ mod fuzz_stress {
     fn fuzz_projection_random() {
         let mut rng = 777u64;
         let next_rand = |rng: &mut u64| -> f32 {
-            *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17;
+            *rng ^= *rng << 13;
+            *rng ^= *rng >> 7;
+            *rng ^= *rng << 17;
             ((*rng as f32) / (u64::MAX as f32)) * 2.0 - 1.0
         };
 
@@ -2219,7 +2401,9 @@ mod fuzz_stress {
             let vocab_size = 4 + (rng % 500) as usize;
 
             let hidden: Vec<f32> = (0..hidden_size).map(|_| next_rand(&mut rng)).collect();
-            let lm_head: Vec<f32> = (0..vocab_size * hidden_size).map(|_| next_rand(&mut rng)).collect();
+            let lm_head: Vec<f32> = (0..vocab_size * hidden_size)
+                .map(|_| next_rand(&mut rng))
+                .collect();
 
             let logits = project_to_logits(&hidden, &lm_head, vocab_size).unwrap();
             assert_eq!(logits.len(), vocab_size);
@@ -2227,7 +2411,12 @@ mod fuzz_stress {
             // Verify each logit is the dot product of hidden with corresponding row
             for (v, row) in logits.iter().zip(lm_head.chunks_exact(hidden_size)) {
                 let expected: f32 = row.iter().zip(hidden.iter()).map(|(a, b)| a * b).sum();
-                assert!((*v - expected).abs() < 0.01, "Projection mismatch: got {} expected {}", v, expected);
+                assert!(
+                    (*v - expected).abs() < 0.01,
+                    "Projection mismatch: got {} expected {}",
+                    v,
+                    expected
+                );
             }
         }
     }
@@ -2244,7 +2433,10 @@ mod error_stress {
     #[test]
     fn stress_logit_error_display() {
         let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(LogitError::ShapeMismatch { expected: 10, got: 5 }),
+            Box::new(LogitError::ShapeMismatch {
+                expected: 10,
+                got: 5,
+            }),
             Box::new(LogitError::EmptyLogits),
             Box::new(LogitError::InvalidTemperature(0.0)),
             Box::new(LogitError::InvalidTopP(2.0)),
@@ -2260,7 +2452,10 @@ mod error_stress {
         let errors: Vec<Box<dyn std::error::Error>> = vec![
             Box::new(TokenizerError::MissingVocab),
             Box::new(TokenizerError::MissingMerges),
-            Box::new(TokenizerError::VocabSizeMismatch { tokens: 100, scores: 50 }),
+            Box::new(TokenizerError::VocabSizeMismatch {
+                tokens: 100,
+                scores: 50,
+            }),
             Box::new(TokenizerError::UnknownToken("foo".into())),
         ];
         for e in &errors {

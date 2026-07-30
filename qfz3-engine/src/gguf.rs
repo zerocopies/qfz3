@@ -4,7 +4,6 @@
 /// descriptors *without* loading any weight data into RAM.
 ///
 /// Spec: https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek};
@@ -34,26 +33,38 @@ pub enum GgufValue {
 
 impl GgufValue {
     pub fn as_str(&self) -> Option<&str> {
-        if let GgufValue::String(s) = self { Some(s) } else { None }
+        if let GgufValue::String(s) = self {
+            Some(s)
+        } else {
+            None
+        }
     }
     pub fn as_u32(&self) -> Option<u32> {
-        if let GgufValue::U32(v) = self { Some(*v) } else { None }
+        if let GgufValue::U32(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
     }
     pub fn as_u64(&self) -> Option<u64> {
-        if let GgufValue::U64(v) = self { Some(*v) } else { None }
+        if let GgufValue::U64(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
     }
 }
 
 // ── Tensor descriptor (no data, just shape + offset) ─────────────────────────
 #[derive(Debug, Clone)]
 pub struct TensorInfo {
-    pub name:        String,
+    pub name: String,
     /// Shape in each dimension.
-    pub dims:        Vec<u64>,
+    pub dims: Vec<u64>,
     /// GGML quantization type id.
-    pub ggml_type:   u32,
+    pub ggml_type: u32,
     /// Byte offset from the start of the tensor-data section.
-    pub offset:      u64,
+    pub offset: u64,
 }
 
 impl TensorInfo {
@@ -66,10 +77,10 @@ impl TensorInfo {
 // ── Top-level header ──────────────────────────────────────────────────────────
 #[derive(Debug)]
 pub struct GgufHeader {
-    pub version:    u32,
-    pub n_tensors:  u64,
-    pub metadata:   HashMap<String, GgufValue>,
-    pub tensors:    Vec<TensorInfo>,
+    pub version: u32,
+    pub n_tensors: u64,
+    pub metadata: HashMap<String, GgufValue>,
+    pub tensors: Vec<TensorInfo>,
     /// Byte offset in the file where tensor data begins (after the header).
     pub data_offset: u64,
 }
@@ -101,13 +112,21 @@ impl GgufHeader {
             ));
         }
 
-        let n_tensors  = if version == 1 { read_u32(r)? as u64 } else { read_u64(r)? };
-        let n_kv       = if version == 1 { read_u32(r)? as u64 } else { read_u64(r)? };
+        let n_tensors = if version == 1 {
+            read_u32(r)? as u64
+        } else {
+            read_u64(r)?
+        };
+        let n_kv = if version == 1 {
+            read_u32(r)? as u64
+        } else {
+            read_u64(r)?
+        };
 
         // Metadata key-value pairs
         let mut metadata = HashMap::with_capacity(n_kv as usize);
         for _ in 0..n_kv {
-            let key   = read_gguf_string(r)?;
+            let key = read_gguf_string(r)?;
             let value = read_gguf_value(r, version)?;
             metadata.insert(key, value);
         }
@@ -115,15 +134,24 @@ impl GgufHeader {
         // Tensor descriptors
         let mut tensors = Vec::with_capacity(n_tensors as usize);
         for _ in 0..n_tensors {
-            let name      = read_gguf_string(r)?;
-            let n_dims    = read_u32(r)? as usize;
-            let mut dims  = vec![0u64; n_dims];
+            let name = read_gguf_string(r)?;
+            let n_dims = read_u32(r)? as usize;
+            let mut dims = vec![0u64; n_dims];
             for d in dims.iter_mut() {
-                *d = if version == 1 { read_u32(r)? as u64 } else { read_u64(r)? };
+                *d = if version == 1 {
+                    read_u32(r)? as u64
+                } else {
+                    read_u64(r)?
+                };
             }
             let ggml_type = read_u32(r)?;
-            let offset    = read_u64(r)?;
-            tensors.push(TensorInfo { name, dims, ggml_type, offset });
+            let offset = read_u64(r)?;
+            tensors.push(TensorInfo {
+                name,
+                dims,
+                ggml_type,
+                offset,
+            });
         }
 
         // Align to 32 bytes to find the start of tensor data.
@@ -134,7 +162,13 @@ impl GgufHeader {
             .unwrap_or(32) as u64;
         let data_offset = (pos + alignment - 1) / alignment * alignment;
 
-        Ok(GgufHeader { version, n_tensors, metadata, tensors, data_offset })
+        Ok(GgufHeader {
+            version,
+            n_tensors,
+            metadata,
+            tensors,
+            data_offset,
+        })
     }
 
     // ── Convenience accessors ─────────────────────────────────────────────────
@@ -144,7 +178,9 @@ impl GgufHeader {
     }
 
     pub fn architecture(&self) -> Option<&str> {
-        self.metadata.get("general.architecture").and_then(|v| v.as_str())
+        self.metadata
+            .get("general.architecture")
+            .and_then(|v| v.as_str())
     }
 
     pub fn context_length(&self) -> Option<u32> {
@@ -173,7 +209,10 @@ impl GgufHeader {
         log::info!("── GGUF Header ──────────────────────────────");
         log::info!("  Version    : {}", self.version);
         log::info!("  Model      : {}", self.model_name().unwrap_or("unknown"));
-        log::info!("  Arch       : {}", self.architecture().unwrap_or("unknown"));
+        log::info!(
+            "  Arch       : {}",
+            self.architecture().unwrap_or("unknown")
+        );
         log::info!("  Layers     : {}", self.layer_count().unwrap_or(0));
         log::info!("  Context    : {}", self.context_length().unwrap_or(0));
         log::info!("  Tensors    : {}", self.n_tensors);
@@ -221,20 +260,24 @@ fn read_gguf_string<R: Read>(r: &mut R) -> io::Result<String> {
 fn read_gguf_value<R: Read + Seek>(r: &mut R, version: u32) -> io::Result<GgufValue> {
     let type_id = read_u32(r)?;
     match type_id {
-        0  => Ok(GgufValue::U8(read_u8(r)?)),
-        1  => Ok(GgufValue::I8(read_u8(r)? as i8)),
-        2  => Ok(GgufValue::U16(read_u16(r)?)),
-        3  => Ok(GgufValue::I16(read_u16(r)? as i16)),
-        4  => Ok(GgufValue::U32(read_u32(r)?)),
-        5  => Ok(GgufValue::I32(read_u32(r)? as i32)),
-        6  => Ok(GgufValue::F32(read_f32(r)?)),
-        7  => Ok(GgufValue::Bool(read_u8(r)? != 0)),
-        8  => Ok(GgufValue::String(read_gguf_string(r)?)),
-        9  => {
+        0 => Ok(GgufValue::U8(read_u8(r)?)),
+        1 => Ok(GgufValue::I8(read_u8(r)? as i8)),
+        2 => Ok(GgufValue::U16(read_u16(r)?)),
+        3 => Ok(GgufValue::I16(read_u16(r)? as i16)),
+        4 => Ok(GgufValue::U32(read_u32(r)?)),
+        5 => Ok(GgufValue::I32(read_u32(r)? as i32)),
+        6 => Ok(GgufValue::F32(read_f32(r)?)),
+        7 => Ok(GgufValue::Bool(read_u8(r)? != 0)),
+        8 => Ok(GgufValue::String(read_gguf_string(r)?)),
+        9 => {
             // Array: element type + count + elements
             let elem_type = read_u32(r)?;
-            let count     = if version == 1 { read_u32(r)? as u64 } else { read_u64(r)? };
-            let mut arr   = Vec::with_capacity(count as usize);
+            let count = if version == 1 {
+                read_u32(r)? as u64
+            } else {
+                read_u64(r)?
+            };
+            let mut arr = Vec::with_capacity(count as usize);
             for _ in 0..count {
                 // Temporarily wrap type_id back so we can recurse.
                 // We do this by writing the elem_type into a local buffer.
@@ -255,15 +298,15 @@ fn read_gguf_value<R: Read + Seek>(r: &mut R, version: u32) -> io::Result<GgufVa
 
 fn read_gguf_value_by_type<R: Read + Seek>(r: &mut R, type_id: u32) -> io::Result<GgufValue> {
     match type_id {
-        0  => Ok(GgufValue::U8(read_u8(r)?)),
-        1  => Ok(GgufValue::I8(read_u8(r)? as i8)),
-        2  => Ok(GgufValue::U16(read_u16(r)?)),
-        3  => Ok(GgufValue::I16(read_u16(r)? as i16)),
-        4  => Ok(GgufValue::U32(read_u32(r)?)),
-        5  => Ok(GgufValue::I32(read_u32(r)? as i32)),
-        6  => Ok(GgufValue::F32(read_f32(r)?)),
-        7  => Ok(GgufValue::Bool(read_u8(r)? != 0)),
-        8  => Ok(GgufValue::String(read_gguf_string(r)?)),
+        0 => Ok(GgufValue::U8(read_u8(r)?)),
+        1 => Ok(GgufValue::I8(read_u8(r)? as i8)),
+        2 => Ok(GgufValue::U16(read_u16(r)?)),
+        3 => Ok(GgufValue::I16(read_u16(r)? as i16)),
+        4 => Ok(GgufValue::U32(read_u32(r)?)),
+        5 => Ok(GgufValue::I32(read_u32(r)? as i32)),
+        6 => Ok(GgufValue::F32(read_f32(r)?)),
+        7 => Ok(GgufValue::Bool(read_u8(r)? != 0)),
+        8 => Ok(GgufValue::String(read_gguf_string(r)?)),
         10 => Ok(GgufValue::U64(read_u64(r)?)),
         11 => Ok(GgufValue::I64(read_u64(r)? as i64)),
         12 => Ok(GgufValue::F64(read_f64(r)?)),

@@ -15,7 +15,6 @@
 ///      sequential layer-by-layer inference).
 ///
 /// Result: a 4.58 GiB model runs with ~2 GiB physical RAM in use at any time.
-
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -28,11 +27,11 @@ use anyhow::{bail, Result};
 
 extern "C" {
     fn mmap(
-        addr:   *mut libc::c_void,
-        len:    libc::size_t,
-        prot:   libc::c_int,
-        flags:  libc::c_int,
-        fd:     libc::c_int,
+        addr: *mut libc::c_void,
+        len: libc::size_t,
+        prot: libc::c_int,
+        flags: libc::c_int,
+        fd: libc::c_int,
         offset: libc::off_t,
     ) -> *mut libc::c_void;
     fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> libc::c_int;
@@ -42,18 +41,18 @@ extern "C" {
     fn fstat(fd: libc::c_int, buf: *mut libc::stat) -> libc::c_int;
 }
 
-const PROT_READ:     libc::c_int = 1;
-const MAP_PRIVATE:   libc::c_int = 0x02;
-const MAP_HUGETLB:   libc::c_int = 0x040000;
+const PROT_READ: libc::c_int = 1;
+const MAP_PRIVATE: libc::c_int = 0x02;
+const MAP_HUGETLB: libc::c_int = 0x040000;
 const MADV_WILLNEED: libc::c_int = 3;
 const MADV_DONTNEED: libc::c_int = 4;
 
 /// Size of each eviction/prefetch window (500 MiB).
 pub const LAYER_SIZE_BYTES: usize = 500 * 1024 * 1024;
 /// How many windows ahead to prefetch.
-pub const PREFETCH_DEPTH:   usize = 2;
+pub const PREFETCH_DEPTH: usize = 2;
 /// How many windows to keep hot before evicting.
-pub const MAX_RAM_LAYERS:   usize = 4;
+pub const MAX_RAM_LAYERS: usize = 4;
 
 // ── Low-level helpers ─────────────────────────────────────────────────────────
 
@@ -61,7 +60,11 @@ fn safe_open(path: &Path) -> std::io::Result<RawFd> {
     let c = CString::new(path.as_os_str().as_encoded_bytes())
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "null in path"))?;
     let fd = unsafe { open(c.as_ptr(), libc::O_RDONLY) };
-    if fd == -1 { Err(std::io::Error::last_os_error()) } else { Ok(fd) }
+    if fd == -1 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(fd)
+    }
 }
 
 fn file_size(fd: RawFd) -> std::io::Result<usize> {
@@ -76,16 +79,21 @@ fn file_size(fd: RawFd) -> std::io::Result<usize> {
 fn safe_mmap(fd: RawFd, len: usize) -> std::io::Result<NonNull<libc::c_void>> {
     // Try huge pages first (reduces TLB pressure on large files).
     let ptr = unsafe {
-        mmap(std::ptr::null_mut(), len, PROT_READ, MAP_PRIVATE | MAP_HUGETLB, fd, 0)
+        mmap(
+            std::ptr::null_mut(),
+            len,
+            PROT_READ,
+            MAP_PRIVATE | MAP_HUGETLB,
+            fd,
+            0,
+        )
     };
     if ptr != libc::MAP_FAILED {
         log::info!("[Z.1] mmap: huge pages active.");
         return Ok(unsafe { NonNull::new_unchecked(ptr) });
     }
     log::warn!("[Z.1] mmap: huge pages unavailable, using standard pages.");
-    let ptr2 = unsafe {
-        mmap(std::ptr::null_mut(), len, PROT_READ, MAP_PRIVATE, fd, 0)
-    };
+    let ptr2 = unsafe { mmap(std::ptr::null_mut(), len, PROT_READ, MAP_PRIVATE, fd, 0) };
     if ptr2 == libc::MAP_FAILED {
         return Err(std::io::Error::last_os_error());
     }
@@ -93,8 +101,8 @@ fn safe_mmap(fd: RawFd, len: usize) -> std::io::Result<NonNull<libc::c_void>> {
 }
 
 fn safe_madvise(
-    addr:   NonNull<libc::c_void>,
-    len:    usize,
+    addr: NonNull<libc::c_void>,
+    len: usize,
     advice: libc::c_int,
 ) -> std::io::Result<()> {
     if unsafe { madvise(addr.as_ptr(), len, advice) } == -1 {
@@ -115,8 +123,8 @@ pub fn num_layers(total: usize) -> usize {
 /// Owns the file descriptor and the full virtual mmap region.
 /// Physical pages are loaded lazily by the kernel on first access.
 pub struct FileMapper {
-    fd:             RawFd,
-    pub ptr:        NonNull<libc::c_void>,
+    fd: RawFd,
+    pub ptr: NonNull<libc::c_void>,
     pub total_size: usize,
 }
 
@@ -126,17 +134,33 @@ unsafe impl Sync for FileMapper {}
 impl FileMapper {
     pub fn open(path: &Path) -> Result<Self> {
         let fd = safe_open(path)?;
-        let sz = file_size(fd).map_err(|e| { unsafe { close(fd); } e })?;
+        let sz = file_size(fd).map_err(|e| {
+            unsafe {
+                close(fd);
+            }
+            e
+        })?;
         if sz == 0 {
-            unsafe { close(fd); }
+            unsafe {
+                close(fd);
+            }
             bail!("model file is empty");
         }
-        let ptr = safe_mmap(fd, sz).map_err(|e| { unsafe { close(fd); } e })?;
+        let ptr = safe_mmap(fd, sz).map_err(|e| {
+            unsafe {
+                close(fd);
+            }
+            e
+        })?;
         log::info!(
             "[Z.1] FileMapper: {:.2} GiB mapped to virtual memory (~0 physical RAM).",
             sz as f64 / (1u64 << 30) as f64
         );
-        Ok(FileMapper { fd, ptr, total_size: sz })
+        Ok(FileMapper {
+            fd,
+            ptr,
+            total_size: sz,
+        })
     }
 
     /// Raw pointer to the start of window `idx`.
@@ -144,9 +168,7 @@ impl FileMapper {
     /// # Safety
     /// Caller must ensure `idx < num_layers(self.total_size)`.
     pub unsafe fn layer_ptr(&self, idx: usize) -> NonNull<u8> {
-        NonNull::new_unchecked(
-            (self.ptr.as_ptr() as usize + idx * LAYER_SIZE_BYTES) as *mut u8
-        )
+        NonNull::new_unchecked((self.ptr.as_ptr() as usize + idx * LAYER_SIZE_BYTES) as *mut u8)
     }
 
     /// Evict window `idx` from physical RAM.
@@ -154,7 +176,9 @@ impl FileMapper {
     /// on next access (which never happens for already-computed layers).
     pub fn evict_layer(&self, idx: usize) -> std::io::Result<()> {
         let offset = idx * LAYER_SIZE_BYTES;
-        if offset >= self.total_size { return Ok(()); }
+        if offset >= self.total_size {
+            return Ok(());
+        }
         let len = LAYER_SIZE_BYTES.min(self.total_size - offset);
         let addr = unsafe {
             NonNull::new_unchecked((self.ptr.as_ptr() as usize + offset) as *mut libc::c_void)
@@ -165,7 +189,9 @@ impl FileMapper {
     /// Warm up window `idx` — ask the kernel to start loading it from disk.
     pub fn prefetch_layer(&self, idx: usize) -> std::io::Result<()> {
         let offset = idx * LAYER_SIZE_BYTES;
-        if offset >= self.total_size { return Ok(()); }
+        if offset >= self.total_size {
+            return Ok(());
+        }
         let len = LAYER_SIZE_BYTES.min(self.total_size - offset);
         let addr = unsafe {
             NonNull::new_unchecked((self.ptr.as_ptr() as usize + offset) as *mut libc::c_void)
@@ -190,23 +216,21 @@ impl Drop for FileMapper {
 /// Uses a Condvar so it wakes immediately when `advance()` is called rather
 /// than sleeping for a fixed interval.
 pub struct Prefetcher {
-    handle:        Option<std::thread::JoinHandle<()>>,
-    stop:          Arc<AtomicBool>,
-    notify:        Arc<(Mutex<()>, Condvar)>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    stop: Arc<AtomicBool>,
+    notify: Arc<(Mutex<()>, Condvar)>,
     pub current_layer: Arc<AtomicUsize>,
 }
 
 impl Prefetcher {
     pub fn spawn(base: NonNull<libc::c_void>, total_size: usize) -> Self {
-        let stop          = Arc::new(AtomicBool::new(false));
-        let notify        = Arc::new((Mutex::new(()), Condvar::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new((Mutex::new(()), Condvar::new()));
         let current_layer = Arc::new(AtomicUsize::new(0));
-        let base_usize    = base.as_ptr() as usize;
-        let nlayers       = num_layers(total_size);
+        let base_usize = base.as_ptr() as usize;
+        let nlayers = num_layers(total_size);
 
-        let (stop2, notify2, cur2) = (
-            stop.clone(), notify.clone(), current_layer.clone(),
-        );
+        let (stop2, notify2, cur2) = (stop.clone(), notify.clone(), current_layer.clone());
 
         let handle = std::thread::spawn(move || {
             let (lock, cvar) = &*notify2;
@@ -215,18 +239,20 @@ impl Prefetcher {
                 let g = lock.lock().unwrap();
                 let _ = cvar.wait_timeout(g, Duration::from_millis(100));
 
-                if stop2.load(Ordering::Acquire) { break; }
+                if stop2.load(Ordering::Acquire) {
+                    break;
+                }
 
                 let cur = cur2.load(Ordering::Acquire);
                 for i in 1..=PREFETCH_DEPTH {
                     let t = cur + i;
-                    if t >= nlayers { break; }
+                    if t >= nlayers {
+                        break;
+                    }
                     let offset = t * LAYER_SIZE_BYTES;
-                    let len    = LAYER_SIZE_BYTES.min(total_size - offset);
+                    let len = LAYER_SIZE_BYTES.min(total_size - offset);
                     let addr = unsafe {
-                        NonNull::new_unchecked(
-                            (base_usize + offset) as *mut libc::c_void
-                        )
+                        NonNull::new_unchecked((base_usize + offset) as *mut libc::c_void)
                     };
                     if let Err(e) = safe_madvise(addr, len, MADV_WILLNEED) {
                         log::warn!("[Z.1] Prefetch layer {}: {}", t, e);
@@ -238,7 +264,12 @@ impl Prefetcher {
             log::debug!("[Z.1] Prefetch thread exiting.");
         });
 
-        Prefetcher { handle: Some(handle), stop, notify, current_layer }
+        Prefetcher {
+            handle: Some(handle),
+            stop,
+            notify,
+            current_layer,
+        }
     }
 
     /// Notify the prefetch thread that inference has moved to `layer`.
@@ -262,13 +293,13 @@ impl Prefetcher {
 /// The engine calls `evict_old_window(current_step)` after each decode
 /// to keep physical RAM bounded.
 pub struct InferenceMapper {
-    pub mapper:     FileMapper,
+    pub mapper: FileMapper,
     pub prefetcher: Prefetcher,
 }
 
 impl InferenceMapper {
     pub fn new(path: &Path) -> Result<Self> {
-        let mapper     = FileMapper::open(path)?;
+        let mapper = FileMapper::open(path)?;
         let prefetcher = Prefetcher::spawn(mapper.ptr, mapper.total_size);
 
         // Warm up the first windows immediately.

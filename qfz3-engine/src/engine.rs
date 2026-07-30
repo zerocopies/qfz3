@@ -11,7 +11,8 @@
 use std::path::PathBuf;
 
 use crate::generate::{
-    build_chat_tokens, build_followup_chat_tokens, run_generation_captured, GenerateConfig,
+    build_chat_tokens, build_followup_chat_tokens, run_generation_captured,
+    run_generation_captured_streaming, GenerateConfig,
 };
 use crate::gguf::{GgufHeader, GgufValue};
 use crate::graph::ForwardPass;
@@ -57,13 +58,21 @@ impl Engine {
     ) -> Result<Self, String> {
         let path = PathBuf::from(model_path);
 
-        let header = GgufHeader::from_file(&path)
-            .map_err(|e| format!("GGUF header: {}", e))?;
-        let model = MappedModel::load(&path)
-            .map_err(|e| format!("mmap model: {}", e))?;
-        let tokenizer = build_tokenizer_from_header(&header)
-            .map_err(|e| format!("tokenizer: {}", e))?;
-        let fwd = ForwardPass::new(&model)
+        let header = GgufHeader::from_file(&path).map_err(|e| {
+            format!(
+                "Could not load the local model at:\n  {}\n\n\
+                This usually means the model file doesn't exist yet. To fix this:\n  \
+                1. Download a GGUF model (e.g. from huggingface.co)\n  \
+                2. Run: buzz-cli --setup\n  \
+                3. Enter the full path to the downloaded .gguf file\n\n\
+                (original error: {})",
+                model_path, e
+            )
+        })?;
+        let model = MappedModel::load(&path).map_err(|e| format!("mmap model: {}", e))?;
+        let tokenizer =
+            build_tokenizer_from_header(&header).map_err(|e| format!("tokenizer: {}", e))?;
+        let fwd = ForwardPass::new(&model, context_len as i64)
             .map_err(|e| format!("forward pass: {}", e))?;
 
         Ok(Engine {
@@ -71,7 +80,7 @@ impl Engine {
             tokenizer,
             model,
             system_prompt: system_prompt
-                .unwrap_or("You are a helpful assistant.")
+                .unwrap_or("You are Buzz, a private AI assistant that runs locally on the user's own device. You were not made by OpenAI or any other company that trains cloud AI models — you are an open-weight model running entirely offline. If asked who made you or what you are, say you are Buzz, running locally.")
                 .to_string(),
             context_len,
             turn_count: 0,
@@ -87,14 +96,17 @@ impl Engine {
         };
 
         let mut cfg = GenerateConfig::default();
-        cfg.max_new_tokens = if max_tokens < 1 { 1 } else { max_tokens as usize };
+        cfg.max_new_tokens = if max_tokens < 1 {
+            1
+        } else {
+            max_tokens as usize
+        };
         cfg.context_len = self.context_len;
         cfg.print_timing = false;
 
-        let (stats, text) = run_generation_captured(
-            &turn_ids, &mut self.fwd, &self.model, &self.tokenizer, &cfg,
-        )
-        .map_err(|e| e.to_string())?;
+        let (stats, text) =
+            run_generation_captured(&turn_ids, &mut self.fwd, &self.model, &self.tokenizer, &cfg)
+                .map_err(|e| e.to_string())?;
 
         self.turn_count += 1;
 
@@ -114,9 +126,60 @@ impl Engine {
         })
     }
 
+    /// Same as generate_rich, but calls on_token for each decoded piece
+    /// as it is generated, so a caller can stream output incrementally
+    /// instead of waiting for the full reply.
+    pub fn generate_streaming(
+        &mut self,
+        prompt: &str,
+        max_tokens: i32,
+        mut on_token: impl FnMut(&str),
+    ) -> Result<GenOutput, String> {
+        let turn_ids = if self.turn_count == 0 {
+            build_chat_tokens(prompt, &self.tokenizer)
+        } else {
+            build_followup_chat_tokens(prompt, &self.tokenizer)
+        };
+        let mut cfg = GenerateConfig::default();
+        cfg.max_new_tokens = if max_tokens < 1 {
+            1
+        } else {
+            max_tokens as usize
+        };
+        cfg.context_len = self.context_len;
+        cfg.print_timing = false;
+        let (stats, text) = run_generation_captured_streaming(
+            &turn_ids,
+            &mut self.fwd,
+            &self.model,
+            &self.tokenizer,
+            &cfg,
+            &mut on_token,
+        )
+        .map_err(|e| e.to_string())?;
+        self.turn_count += 1;
+        let stop_reason = if stats.generated_tokens >= cfg.max_new_tokens {
+            StopReason::MaxTokens
+        } else {
+            StopReason::EndOfTurn
+        };
+        Ok(GenOutput {
+            text,
+            prompt_tokens: stats.prompt_tokens,
+            completion_tokens: stats.generated_tokens,
+            prompt_ms: stats.prompt_ms,
+            generate_ms: stats.generate_ms,
+            stop_reason,
+        })
+    }
+
     /// Back-compat shim for existing callers: (text, generated_tokens).
     /// The i32 is now a tokenizer-true count — word-count metering is gone.
-    pub fn generate_sync(&mut self, prompt: &str, max_tokens: i32) -> Result<(String, i32), String> {
+    pub fn generate_sync(
+        &mut self,
+        prompt: &str,
+        max_tokens: i32,
+    ) -> Result<(String, i32), String> {
         let out = self.generate_rich(prompt, max_tokens)?;
         Ok((out.text, out.completion_tokens as i32))
     }
@@ -135,15 +198,25 @@ impl Engine {
 // build_tokenizer_from_header mirrors main.rs::build_tokenizer; the extract_*
 // helpers below are copied VERBATIM from main.rs by the writer script.
 
-fn build_tokenizer_from_header(header: &GgufHeader) -> Result<Tokenizer, Box<dyn std::error::Error>> {
+fn build_tokenizer_from_header(
+    header: &GgufHeader,
+) -> Result<Tokenizer, Box<dyn std::error::Error>> {
     let tokens: Vec<String> = extract_string_array(&header.metadata, "tokenizer.ggml.tokens")?;
-    let scores: Vec<f32> = extract_f32_array(&header.metadata, "tokenizer.ggml.scores").unwrap_or_default();
-    let types: Vec<u32> = extract_u32_array(&header.metadata, "tokenizer.ggml.token_type").unwrap_or_default();
-    let merges: Vec<String> = extract_string_array(&header.metadata, "tokenizer.ggml.merges").unwrap_or_default();
-    Ok(Tokenizer::from_gguf_parts(&tokens, &scores, &types, &merges)?)
+    let scores: Vec<f32> =
+        extract_f32_array(&header.metadata, "tokenizer.ggml.scores").unwrap_or_default();
+    let types: Vec<u32> =
+        extract_u32_array(&header.metadata, "tokenizer.ggml.token_type").unwrap_or_default();
+    let merges: Vec<String> =
+        extract_string_array(&header.metadata, "tokenizer.ggml.merges").unwrap_or_default();
+    Ok(Tokenizer::from_gguf_parts(
+        &tokens, &scores, &types, &merges,
+    )?)
 }
 
-fn extract_string_array(meta: &std::collections::HashMap<String, GgufValue>, key: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn extract_string_array(
+    meta: &std::collections::HashMap<String, GgufValue>,
+    key: &str,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     match meta.get(key) {
         Some(GgufValue::Array(arr)) => {
             let mut result = Vec::new();
@@ -159,7 +232,10 @@ fn extract_string_array(meta: &std::collections::HashMap<String, GgufValue>, key
     }
 }
 
-fn extract_f32_array(meta: &std::collections::HashMap<String, GgufValue>, key: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+fn extract_f32_array(
+    meta: &std::collections::HashMap<String, GgufValue>,
+    key: &str,
+) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     match meta.get(key) {
         Some(GgufValue::Array(arr)) => {
             let mut result = Vec::new();
@@ -175,7 +251,10 @@ fn extract_f32_array(meta: &std::collections::HashMap<String, GgufValue>, key: &
     }
 }
 
-fn extract_u32_array(meta: &std::collections::HashMap<String, GgufValue>, key: &str) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+fn extract_u32_array(
+    meta: &std::collections::HashMap<String, GgufValue>,
+    key: &str,
+) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     match meta.get(key) {
         Some(GgufValue::Array(arr)) => {
             let mut result = Vec::new();

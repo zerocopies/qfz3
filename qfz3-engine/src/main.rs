@@ -27,16 +27,34 @@ fn parse_args() -> Args {
     let mut i = 0;
     while i < raw.len() {
         match raw[i].as_str() {
-            "--model" | "-m" => { i += 1; a.model_path = raw.get(i).map(PathBuf::from); }
-            "--prompt" | "-p" => { i += 1; a.prompt = raw.get(i).cloned(); }
-            "--chat" | "-c"   => a.chat = true,
-            "--bench" | "-b"  => a.bench = true,
+            "--model" | "-m" => {
+                i += 1;
+                a.model_path = raw.get(i).map(PathBuf::from);
+            }
+            "--prompt" | "-p" => {
+                i += 1;
+                a.prompt = raw.get(i).cloned();
+            }
+            "--chat" | "-c" => a.chat = true,
+            "--bench" | "-b" => a.bench = true,
             "--dump" => a.dump = true,
-            "--help" | "-h"   => a.help = true,
-            "--max-tokens" | "-n" => { i += 1; a.max_tokens = raw.get(i).and_then(|s| s.parse().ok()); }
-            "--temperature" | "-t" => { i += 1; a.temperature = raw.get(i).and_then(|s| s.parse().ok()); }
-            "--top-p" => { i += 1; a.top_p = raw.get(i).and_then(|s| s.parse().ok()); }
-            "--context-len" => { i += 1; a.context_len = raw.get(i).and_then(|s| s.parse().ok()); }
+            "--help" | "-h" => a.help = true,
+            "--max-tokens" | "-n" => {
+                i += 1;
+                a.max_tokens = raw.get(i).and_then(|s| s.parse().ok());
+            }
+            "--temperature" | "-t" => {
+                i += 1;
+                a.temperature = raw.get(i).and_then(|s| s.parse().ok());
+            }
+            "--top-p" => {
+                i += 1;
+                a.top_p = raw.get(i).and_then(|s| s.parse().ok());
+            }
+            "--context-len" => {
+                i += 1;
+                a.context_len = raw.get(i).and_then(|s| s.parse().ok());
+            }
             other => eprintln!("[Z.1] warning: unknown argument '{other}'"),
         }
         i += 1;
@@ -45,7 +63,8 @@ fn parse_args() -> Args {
 }
 
 fn print_help() {
-    println!(r#"
+    println!(
+        r#"
 Z.1 — Local LLM inference engine
 
 USAGE:
@@ -67,7 +86,8 @@ EXAMPLES:
     qfz3 --chat
     qfz3 --bench
     qfz3 -m ai_playground/gemma-2-2b-it-abliterated.Q5_K_M.gguf -p "Explain RLHF"
-"#);
+"#
+    );
 }
 
 fn main() {
@@ -78,12 +98,17 @@ fn main() {
         return;
     }
 
-    let model_path = args.model_path.clone()
+    let model_path = args
+        .model_path
+        .clone()
         .unwrap_or_else(|| PathBuf::from(DEFAULT_MODEL));
 
     if args.dump {
         let header = GgufHeader::from_file(&model_path).unwrap();
-        println!("Version: {}, Tensors: {}, Data offset: {}", header.version, header.n_tensors, header.data_offset);
+        println!(
+            "Version: {}, Tensors: {}, Data offset: {}",
+            header.version, header.n_tensors, header.data_offset
+        );
         let mut names: Vec<&str> = header.tensors.iter().map(|t| t.name.as_str()).collect();
         names.sort();
         for n in &names {
@@ -99,8 +124,14 @@ fn main() {
     let _ = io::stderr().flush();
 
     let mut engine = match Engine::load(model_path.to_str().unwrap(), context_len, None) {
-        Ok(e) => { eprintln!("OK"); e }
-        Err(e) => { eprintln!("FAILED: {e}"); process::exit(1); }
+        Ok(e) => {
+            eprintln!("OK");
+            e
+        }
+        Err(e) => {
+            eprintln!("FAILED: {e}");
+            process::exit(1);
+        }
     };
 
     // Override sampling if provided
@@ -117,9 +148,17 @@ fn main() {
         match engine.generate_rich("The capital of France is", 10) {
             Ok(out) => {
                 let pass = out.text.to_lowercase().contains("paris");
-                eprintln!("  result: {:?} prefill={:.0}ms  {}", out.text, out.prompt_ms, if pass { "PASS" } else { "FAIL" });
+                eprintln!(
+                    "  result: {:?} prefill={:.0}ms  {}",
+                    out.text,
+                    out.prompt_ms,
+                    if pass { "PASS" } else { "FAIL" }
+                );
             }
-            Err(e) => { eprintln!("  FAIL: {e}"); return; }
+            Err(e) => {
+                eprintln!("  FAIL: {e}");
+                return;
+            }
         }
         engine.reset();
 
@@ -128,9 +167,15 @@ fn main() {
         for run in 1..=3 {
             match engine.generate_rich("Explain transformer attention briefly.", max_tokens) {
                 Ok(out) => {
-                    let tps = if out.generate_ms > 0.0 { out.completion_tokens as f64 / (out.generate_ms / 1000.0) } else { 0.0 };
-                    eprintln!("  run {run}: {:.2} tok/s | {} tokens | {:.0}ms decode",
-                        tps, out.completion_tokens, out.generate_ms);
+                    let tps = if out.generate_ms > 0.0 {
+                        out.completion_tokens as f64 / (out.generate_ms / 1000.0)
+                    } else {
+                        0.0
+                    };
+                    eprintln!(
+                        "  run {run}: {:.2} tok/s | {} tokens | {:.0}ms decode",
+                        tps, out.completion_tokens, out.generate_ms
+                    );
                 }
                 Err(e) => eprintln!("  run {run}: ERROR {e}"),
             }
@@ -150,13 +195,25 @@ fn main() {
             let _ = io::stdout().flush();
             let mut line = String::new();
             match stdin.lock().read_line(&mut line) {
-                Ok(0) | Err(_) => { println!("\n[Z.1] Goodbye."); break; }
+                Ok(0) | Err(_) => {
+                    println!("\n[Z.1] Goodbye.");
+                    break;
+                }
                 Ok(_) => {}
             }
             let trimmed = line.trim().to_string();
-            if trimmed.is_empty() { continue; }
-            if trimmed == "/reset" { engine.reset(); eprintln!("[Z.1] Conversation reset."); continue; }
-            if trimmed == "/quit" || trimmed == "/exit" { println!("[Z.1] Goodbye."); break; }
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed == "/reset" {
+                engine.reset();
+                eprintln!("[Z.1] Conversation reset.");
+                continue;
+            }
+            if trimmed == "/quit" || trimmed == "/exit" {
+                println!("[Z.1] Goodbye.");
+                break;
+            }
 
             print!("Z.1:  ");
             let _ = io::stdout().flush();
@@ -165,7 +222,10 @@ fn main() {
                 Ok(out) => {
                     print!("{}", out.text);
                     let _ = io::stdout().flush();
-                    eprintln!("\n  [{} tok, {:.0}ms]", out.completion_tokens, out.generate_ms);
+                    eprintln!(
+                        "\n  [{} tok, {:.0}ms]",
+                        out.completion_tokens, out.generate_ms
+                    );
                 }
                 Err(e) => eprintln!("\n[Z.1] error: {e}"),
             }
@@ -181,10 +241,15 @@ fn main() {
         match engine.generate_rich(prompt, max_tokens) {
             Ok(out) => {
                 println!("{}", out.text);
-                eprintln!("\n[Z.1] {} prompt tokens, {} generated ({:.0}ms prefill, {:.0}ms decode)",
-                    out.prompt_tokens, out.completion_tokens, out.prompt_ms, out.generate_ms);
+                eprintln!(
+                    "\n[Z.1] {} prompt tokens, {} generated ({:.0}ms prefill, {:.0}ms decode)",
+                    out.prompt_tokens, out.completion_tokens, out.prompt_ms, out.generate_ms
+                );
             }
-            Err(e) => { eprintln!("FAILED: {e}"); process::exit(1); }
+            Err(e) => {
+                eprintln!("FAILED: {e}");
+                process::exit(1);
+            }
         }
     }
 }
