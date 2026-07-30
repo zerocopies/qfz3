@@ -57,6 +57,12 @@ struct VocabEntry {
     text: Vec<u8>, // raw bytes (may not be valid UTF-8 for byte tokens)
     score: f32,
     token_type: u32, // 1=normal, 2=unknown, 3=control, 6=byte
+    /// True for `<0xNN>` byte-fallback tokens, where `text` is the single
+    /// true raw byte. False for regular/merged tokens, where `text` is the
+    /// UTF-8 bytes of the token's GPT-2 byte-to-unicode *representation*
+    /// string (see `bytes_to_gpt2_unicode`) — decoding those requires
+    /// reversing that mapping, not just reading the bytes as-is.
+    is_byte_fallback: bool,
 }
 
 // ── Tokenizer ─────────────────────────────────────────────────────────────────
@@ -110,7 +116,8 @@ impl Tokenizer {
             let token_type = if i < types.len() { types[i] } else { 1 };
 
             // Llama 3.1 uses GPT-style byte tokens like <0x41> for 'A'
-            let text: Vec<u8> = if let Some(byte_val) = parse_byte_token(tok_str) {
+            let byte_val = parse_byte_token(tok_str);
+            let text: Vec<u8> = if let Some(byte_val) = byte_val {
                 vec![byte_val]
             } else {
                 tok_str.as_bytes().to_vec()
@@ -121,6 +128,7 @@ impl Tokenizer {
                 text,
                 score,
                 token_type,
+                is_byte_fallback: byte_val.is_some(),
             });
         }
 
@@ -224,18 +232,32 @@ impl Tokenizer {
     /// Decode a sequence of token ids back to a UTF-8 String.
     /// Skips BOS/EOS/PAD and other control tokens silently.
     pub fn decode(&self, ids: &[u32]) -> String {
+        // Accumulate every token's *true* raw bytes — byte-fallback tokens'
+        // bytes as-is, regular/merged tokens' bytes reverse-mapped out of
+        // their GPT-2 representation — then decode the whole thing as UTF-8
+        // exactly once at the end. A single reverse-mapped byte, or a
+        // single byte-fallback byte, is frequently not valid UTF-8 in
+        // isolation (e.g. "×" is bytes 0xC3 0x97 — 0xC3 alone is a lead
+        // byte expecting a continuation that isn't there yet), so decoding
+        // must happen only once every contributing byte has been collected,
+        // not per-entry.
         let mut bytes: Vec<u8> = Vec::new();
         for &id in ids {
             // Skip special tokens
             if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_PAD {
                 continue;
             }
-            if let Some(entry) = self.vocab.get(id as usize) {
-                // Control tokens (type 3) → skip
-                if entry.token_type == 3 {
-                    continue;
-                }
+            let Some(entry) = self.vocab.get(id as usize) else {
+                continue;
+            };
+            // Control tokens (type 3) → skip
+            if entry.token_type == 3 {
+                continue;
+            }
+            if entry.is_byte_fallback {
                 bytes.extend_from_slice(&entry.text);
+            } else if let Ok(s) = std::str::from_utf8(&entry.text) {
+                bytes.extend_from_slice(&gpt2_unicode_to_original_bytes(s));
             }
         }
         // Convert bytes to UTF-8, replacing any invalid sequences with '?'
@@ -245,6 +267,18 @@ impl Tokenizer {
 
     /// Decode a single token id to its string representation.
     /// Useful for streaming output token-by-token.
+    ///
+    /// Known limitation: a multi-byte UTF-8 character split across several
+    /// consecutive tokens (whether `<0xNN>` byte-fallback tokens, or in the
+    /// rare case a regular token's reverse-mapped bytes are themselves an
+    /// incomplete sequence) can't be reconstructed correctly one token at a
+    /// time — those transiently show as replacement characters during
+    /// streaming, same limitation the code already had for byte-fallback
+    /// tokens before this fix. This doesn't block the bug this fixes:
+    /// regular/merged tokens are the common case for frequently-occurring
+    /// non-ASCII characters, and a single such token's bytes are already a
+    /// complete character (or characters) — no cross-token buffering
+    /// needed for that case.
     pub fn decode_one(&self, id: u32) -> Option<String> {
         if id == TOKEN_BOS || id == TOKEN_EOS || id == TOKEN_EOT || id == TOKEN_PAD {
             return None;
@@ -253,9 +287,12 @@ impl Tokenizer {
         if entry.token_type == 3 {
             return None;
         }
-        let s = String::from_utf8_lossy(&entry.text).into_owned();
-        // GPT-2 style: 'Ġ' (U+0120) represents a leading space
-        Some(s.replace('\u{0120}', " ").replace('\u{010a}', "\n"))
+        if entry.is_byte_fallback {
+            return Some(String::from_utf8_lossy(&entry.text).into_owned());
+        }
+        let s = std::str::from_utf8(&entry.text).ok()?;
+        let bytes = gpt2_unicode_to_original_bytes(s);
+        Some(String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
     }
 
     pub fn is_eos(&self, id: u32) -> bool {
@@ -406,6 +443,69 @@ fn bytes_to_gpt2_unicode(input: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Inverse of `bytes_to_gpt2_unicode`'s per-byte table: codepoint → original
+/// byte. Built once lazily and reused — this is the piece that was missing
+/// entirely before: vocab entries for regular (non-byte-fallback) tokens are
+/// stored as the *GPT-2-mapped representation* of their original bytes, and
+/// decoding them requires reversing that mapping, not reading the bytes as
+/// literal output text. Skipping this step is exactly what turned "×"
+/// (U+00D7, encoded as bytes 0xC3 0x97) into the displayed text "ÃĹ" — each
+/// of those two bytes is itself a valid GPT-2-mapped codepoint (0xC3 maps to
+/// itself; 0x97 maps to U+0139 "Ĺ"), so naively treating the vocab string's
+/// raw UTF-8 bytes as final output text silently produced other, wrong,
+/// but equally valid-looking characters instead of an obvious error.
+fn gpt2_unicode_reverse_table() -> &'static HashMap<u32, u8> {
+    static REVERSE: std::sync::OnceLock<HashMap<u32, u8>> = std::sync::OnceLock::new();
+    REVERSE.get_or_init(|| {
+        let mut map = HashMap::with_capacity(256);
+        for byte in 0u32..256 {
+            let is_printable = (33..=126).contains(&byte)
+                || (161..=172).contains(&byte)
+                || (174..=255).contains(&byte);
+            if is_printable {
+                map.insert(byte, byte as u8);
+            }
+        }
+        let mut n = 0u32;
+        for byte in 0u32..256 {
+            let is_printable = (33..=126).contains(&byte)
+                || (161..=172).contains(&byte)
+                || (174..=255).contains(&byte);
+            if !is_printable {
+                map.insert(256 + n, byte as u8);
+                n += 1;
+            }
+        }
+        map
+    })
+}
+
+/// Reverse a GPT-2-mapped-representation string back to the original raw
+/// bytes it stands for. Deliberately returns bytes, not a `String` — a
+/// single reverse-mapped byte is often *not* valid UTF-8 on its own (e.g.
+/// byte 0x80 alone is a lone continuation byte), the same way a lone
+/// `<0xNN>` byte-fallback token isn't. These bytes are only meaningful once
+/// accumulated alongside whatever came before/after and decoded as UTF-8
+/// once, complete — decoding them in isolation is exactly the mistake this
+/// whole fix exists to undo, just one level deeper. Characters that aren't
+/// part of the GPT-2 byte alphabet (which shouldn't occur in a well-formed
+/// vocab, since merged tokens are built entirely from mapped bytes) pass
+/// through as their own UTF-8 bytes rather than being silently dropped.
+fn gpt2_unicode_to_original_bytes(s: &str) -> Vec<u8> {
+    let table = gpt2_unicode_reverse_table();
+    let mut bytes = Vec::with_capacity(s.len());
+    for ch in s.chars() {
+        match table.get(&(ch as u32)) {
+            Some(&b) => bytes.push(b),
+            None => {
+                let mut buf = [0u8; 4];
+                bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+        }
+    }
+    bytes
+}
+
 /// Get the number of UTF-8 bytes used by the GPT-2 unicode char starting at `gpt2[i]`.
 #[inline]
 fn gpt2_char_len(first_byte: u8) -> usize {
@@ -491,4 +591,53 @@ mod tests {
         assert_eq!(parse_byte_token("<0x00>"), Some(0));
         assert_eq!(parse_byte_token("hello"), None);
     }
+
+    #[test]
+    fn gpt2_byte_mapping_round_trips_all_256_bytes() {
+        for byte in 0u8..=255 {
+            let mapped = bytes_to_gpt2_unicode(&[byte]);
+            let mapped_str = std::str::from_utf8(&mapped).unwrap();
+            let recovered = gpt2_unicode_to_original_bytes(mapped_str);
+            assert_eq!(
+                recovered,
+                vec![byte],
+                "byte {byte:#04x} did not round-trip through the GPT-2 mapping"
+            );
+        }
+    }
+
+    /// Direct regression test for the bug reported live: asking the model
+    /// "what is 7 times 6" with the Llama-3.2-3B-Instruct-uncensored model
+    /// produced "7 ÃĹ 6 = 42" instead of "7 × 6 = 42" — a merged vocab
+    /// token representing the multi-byte character "×" (bytes 0xC3 0x97)
+    /// was being decoded as literal text instead of having the GPT-2
+    /// byte-to-unicode mapping reversed first.
+    #[test]
+    fn decode_reconstructs_non_ascii_character_from_gpt2_mapped_token() {
+        // "×" (U+00D7) is bytes [0xC3, 0x97]. Under the GPT-2 byte-to-unicode
+        // table, 0xC3 maps to itself and 0x97 maps to U+0139 ('Ĺ'), so a
+        // merged token representing this character is stored in the vocab
+        // as the two-character string "ÃĹ" — exactly what a real Llama-3.2
+        // GGUF vocab contains for this token.
+        let tokens = vec![
+            "<unk>".to_string(), // 0
+            "7".to_string(),     // 1
+            " ".to_string(),     // 2 (GPT-2 uses this token as itself here)
+            "ÃĹ".to_string(),    // 3 — merged token for "×"
+            "6".to_string(),     // 4
+        ];
+        let scores: Vec<f32> = vec![0.0; tokens.len()];
+        let types: Vec<u32> = vec![2, 1, 1, 1, 1];
+        let merges: Vec<String> = vec![];
+        let t = Tokenizer::from_gguf_parts(&tokens, &scores, &types, &merges).unwrap();
+
+        let ids = vec![1, 2, 3, 2, 4]; // "7", " ", "×", " ", "6"
+        assert_eq!(t.decode(&ids), "7 × 6");
+
+        // decode_one must reconstruct the same character in one call, with
+        // no cross-token buffering needed (unlike split byte-fallback
+        // tokens), since this is a single already-complete merged token.
+        assert_eq!(t.decode_one(3), Some("×".to_string()));
+    }
 }
+
