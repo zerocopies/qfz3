@@ -135,6 +135,16 @@ cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
+### Benchmarking
+
+`thread_bench.py` is the A/B harness that produced the thread-pinning number above: it toggles the pinned block in `graph.rs` in and out, rebuilds, runs N times per configuration, and reports mean decode tok/s.
+
+```bash
+python3 thread_bench.py [n_runs]   # defaults to 5 runs per configuration
+```
+
+Requires a local GGUF model — defaults to `~/qfz3/ai_playground/qwen2.5-coder-1.5b-q4_K_M.gguf`; override with `QFZ3_BENCH_MODEL=/path/to/model.gguf` if that file isn't present on your machine.
+
 ---
 
 ## Roadmap
