@@ -152,6 +152,7 @@ impl KVCache {
     /// head_dim  — dimension per head (e.g. 128)
     /// n_ctx     — maximum context length
     /// backend   — must be the same backend used by the inference graph
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn new(
         n_layers: usize,
         n_head_kv: i64,
@@ -239,18 +240,30 @@ pub struct LlamaGraph {
     pub kv: KVCache,
 
     // ── Persistent decode graph (built once on first decode_one call) ─────────
+    #[allow(dead_code)]
     d_built: bool,
-    d_inp_ctx: *mut ffi::ggml_context, // keeps input tensor descriptors alive
-    d_ctx: *mut ffi::ggml_context,     // compute graph context
+    #[allow(dead_code)]
+    d_inp_ctx: *mut ffi::ggml_context,
+    #[allow(dead_code)]
+    d_ctx: *mut ffi::ggml_context,
+    #[allow(dead_code)]
     d_graph: *mut ffi::ggml_cgraph,
+    #[allow(dead_code)]
     d_galloc: ffi::ggml_gallocr_t,
+    #[allow(dead_code)]
     d_inp_buf: ffi::ggml_backend_buffer_t,
-    d_token: *mut ffi::ggml_tensor,      // [1] i32
-    d_pos: *mut ffi::ggml_tensor,        // [1] i32
-    d_mask: *mut ffi::ggml_tensor,       // [n_ctx, 1] f32
-    d_logits: *mut ffi::ggml_tensor,     // [n_vocab] f32
-    d_k_out: Vec<*mut ffi::ggml_tensor>, // per-layer K for cache write
-    d_v_out: Vec<*mut ffi::ggml_tensor>, // per-layer V for cache write
+    #[allow(dead_code)]
+    d_token: *mut ffi::ggml_tensor,
+    #[allow(dead_code)]
+    d_pos: *mut ffi::ggml_tensor,
+    #[allow(dead_code)]
+    d_mask: *mut ffi::ggml_tensor,
+    #[allow(dead_code)]
+    d_logits: *mut ffi::ggml_tensor,
+    #[allow(dead_code)]
+    d_k_out: Vec<*mut ffi::ggml_tensor>,
+    #[allow(dead_code)]
+    d_v_out: Vec<*mut ffi::ggml_tensor>,
 }
 unsafe impl Send for LlamaGraph {}
 
@@ -304,6 +317,7 @@ impl LlamaGraph {
     // are attended to. K/V for the new token are output tensors — written to
     // the KV cache by Rust after each execution step.
 
+    #[allow(dead_code)]
     fn build_decode_graph(&mut self, model: &MappedModel) -> Result<()> {
         let hp = &self.hp;
         let n_ctx = self.kv.n_ctx;
@@ -587,6 +601,7 @@ impl LlamaGraph {
 
     // ── Execute the persistent decode graph for one token ─────────────────────
 
+    #[allow(dead_code)]
     fn execute_decode(&mut self, token_id: u32, model: &MappedModel) -> Result<Vec<f32>> {
         if !self.d_built {
             self.build_decode_graph(model)?;
@@ -616,8 +631,8 @@ impl LlamaGraph {
         // Update mask: first kv_head positions valid (0.0), rest masked (-1e4)
         let mask_bytes = (n_ctx * 4) as usize;
         let mut mask = vec![-10000.0f32; n_ctx as usize];
-        for i in 0..kv_head as usize {
-            mask[i] = 0.0;
+        for m in mask.iter_mut().take(kv_head as usize) {
+            *m = 0.0;
         }
         unsafe {
             ffi::ggml_backend_tensor_set(
@@ -1018,7 +1033,7 @@ impl LlamaGraph {
             ffi::ggml_view_2d(
                 ctx,
                 cur,
-                hp.n_embd as i64,
+                hp.n_embd,
                 1,
                 row_bytes,
                 row_bytes * (n_tokens as usize - 1),

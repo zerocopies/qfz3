@@ -115,7 +115,7 @@ fn safe_madvise(
 /// Ceiling division: number of LAYER_SIZE_BYTES windows that cover `total` bytes.
 #[inline]
 pub fn num_layers(total: usize) -> usize {
-    (total + LAYER_SIZE_BYTES - 1) / LAYER_SIZE_BYTES
+    total.div_ceil(LAYER_SIZE_BYTES)
 }
 
 // ── FileMapper ────────────────────────────────────────────────────────────────
@@ -134,24 +134,20 @@ unsafe impl Sync for FileMapper {}
 impl FileMapper {
     pub fn open(path: &Path) -> Result<Self> {
         let fd = safe_open(path)?;
-        let sz = file_size(fd).map_err(|e| {
-            unsafe {
+        let sz = file_size(fd)
+            .inspect_err(|_| unsafe {
                 close(fd);
-            }
-            e
-        })?;
+            })?;
         if sz == 0 {
             unsafe {
                 close(fd);
             }
             bail!("model file is empty");
         }
-        let ptr = safe_mmap(fd, sz).map_err(|e| {
-            unsafe {
+        let ptr = safe_mmap(fd, sz)
+            .inspect_err(|_| unsafe {
                 close(fd);
-            }
-            e
-        })?;
+            })?;
         log::info!(
             "[Z.1] FileMapper: {:.2} GiB mapped to virtual memory (~0 physical RAM).",
             sz as f64 / (1u64 << 30) as f64

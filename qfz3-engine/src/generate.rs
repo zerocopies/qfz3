@@ -348,7 +348,6 @@ pub fn generate_turn(
 // ── Llama 3.1 chat template ───────────────────────────────────────────────────
 
 // Special token IDs for Llama 3.1
-const T_BOS: u32 = 128_000; // <|begin_of_text|>
 const T_NEWLINES_LLAMA: u32 = 271; // "\n\n" in llama-3 vocab
 
 /// Which instruct format a model expects, decided by what special tokens

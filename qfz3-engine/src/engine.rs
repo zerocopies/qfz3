@@ -42,10 +42,12 @@ pub struct Engine {
     fwd: ForwardPass,
     tokenizer: Tokenizer,
     model: MappedModel,
-    /// Reserved: golden's chat template currently embeds its own system text.
     pub system_prompt: String,
     pub context_len: usize,
     turn_count: usize,
+    /// Raw user-message text for each turn, used by sliding-window eviction
+    /// to rebuild the prompt from recent context when the KV cache would overflow.
+    turn_messages: Vec<String>,
 }
 
 impl Engine {
@@ -84,45 +86,123 @@ impl Engine {
                 .to_string(),
             context_len,
             turn_count: 0,
+            turn_messages: Vec::new(),
         })
     }
 
-    /// Real inference with honest metadata.
-    pub fn generate_rich(&mut self, prompt: &str, max_tokens: i32) -> Result<GenOutput, String> {
+    /// Compute prompt token ids for this turn, evicting old turns from the
+    /// KV cache if needed to stay within context_len.  Returns the full token
+    /// sequence ready for prefill (everything the cache should contain).
+    fn prepare_turn(&mut self, prompt: &str) -> Result<Vec<u32>, String> {
+        // Build the per-turn token sequence as normal
         let turn_ids = if self.turn_count == 0 {
             build_chat_tokens(prompt, &self.tokenizer)
         } else {
             build_followup_chat_tokens(prompt, &self.tokenizer)
         };
 
-        let mut cfg = GenerateConfig::default();
-        cfg.max_new_tokens = if max_tokens < 1 {
-            1
-        } else {
-            max_tokens as usize
-        };
-        cfg.context_len = self.context_len;
-        cfg.print_timing = false;
+        // Reserve ~25% of the context window for generated output tokens.
+        let max_output = (self.context_len as f64 * 0.25) as usize;
+        let available = self.context_len.saturating_sub(max_output);
 
-        let (stats, text) =
-            run_generation_captured(&turn_ids, &mut self.fwd, &self.model, &self.tokenizer, &cfg)
-                .map_err(|e| e.to_string())?;
+        // Rough estimate: count how many tokens the current prompt history
+        // occupies in the KV cache.  For follow-up turns the size is
+        // approximately the encoded message + framing tokens (~8).
+        fn estimate_tokens(msg: &str) -> usize {
+            msg.len() / 4 + 16
+        }
 
+        let used: usize = self
+            .turn_messages
+            .iter()
+            .map(|m| estimate_tokens(m))
+            .sum();
+        let needed = turn_ids.len();
+
+        if used + needed <= available {
+            self.turn_messages.push(prompt.to_string());
+            self.turn_count += 1;
+            return Ok(turn_ids);
+        }
+
+        // Sliding window: drop oldest messages until remaining + new fits.
+        let mut keep_idx = 0;
+        let mut total = needed;
+        for (i, msg) in self.turn_messages.iter().enumerate().rev() {
+            let est = estimate_tokens(msg);
+            if total + est > available {
+                break;
+            }
+            total += est;
+            keep_idx = i;
+        }
+
+        let dropped = keep_idx;
+        let kept_messages: Vec<String> = self.turn_messages.drain(keep_idx..).collect();
+
+        eprintln!(
+            "[Z.1] context full — dropping {} old turn(s), rebuilding with {} prior turn(s) + new prompt",
+            dropped,
+            kept_messages.len(),
+        );
+
+        // Rebuild the full token sequence from scratch using raw messages
+        self.turn_messages.clear();
+        self.turn_count = 0;
+        self.fwd.reset_kv();
+
+        let mut full_ids: Vec<u32> = Vec::new();
+
+        for msg in &kept_messages {
+            let ids = if self.turn_count == 0 {
+                build_chat_tokens(msg, &self.tokenizer)
+            } else {
+                build_followup_chat_tokens(msg, &self.tokenizer)
+            };
+            self.turn_messages.push(msg.clone());
+            self.turn_count += 1;
+            // We collect but DON'T prefill here — will prefill as one batch
+            full_ids.extend_from_slice(&ids);
+        }
+
+        // Add the new turn
+        full_ids.extend_from_slice(&turn_ids);
+        self.turn_messages.push(prompt.to_string());
         self.turn_count += 1;
 
-        let stop_reason = if stats.generated_tokens >= cfg.max_new_tokens {
-            StopReason::MaxTokens
-        } else {
-            StopReason::EndOfTurn
-        };
+        // Over-approximation safety: if the rebuilt sequence still doesn't fit,
+        // just reset entirely.
+        if full_ids.len() > available {
+            eprintln!(
+                "[Z.1] rebuilt sequence ({} tok) still exceeds window — full reset",
+                full_ids.len(),
+            );
+            self.turn_messages.clear();
+            self.turn_count = 0;
+            self.fwd.reset_kv();
+            let fresh = build_chat_tokens(prompt, &self.tokenizer);
+            self.turn_messages.push(prompt.to_string());
+            self.turn_count += 1;
+            return Ok(fresh);
+        }
 
+        Ok(full_ids)
+    }
+
+    /// Real inference with honest metadata.
+    pub fn generate_rich(&mut self, prompt: &str, max_tokens: i32) -> Result<GenOutput, String> {
+        let (stats, text) = self.generate_inner(prompt, max_tokens, false, None)?;
         Ok(GenOutput {
             text,
             prompt_tokens: stats.prompt_tokens,
             completion_tokens: stats.generated_tokens,
             prompt_ms: stats.prompt_ms,
             generate_ms: stats.generate_ms,
-            stop_reason,
+            stop_reason: if stats.generated_tokens >= max_tokens.max(1) as usize {
+                StopReason::MaxTokens
+            } else {
+                StopReason::EndOfTurn
+            },
         })
     }
 
@@ -133,44 +213,54 @@ impl Engine {
         &mut self,
         prompt: &str,
         max_tokens: i32,
-        mut on_token: impl FnMut(&str),
+        on_token: impl FnMut(&str),
     ) -> Result<GenOutput, String> {
-        let turn_ids = if self.turn_count == 0 {
-            build_chat_tokens(prompt, &self.tokenizer)
-        } else {
-            build_followup_chat_tokens(prompt, &self.tokenizer)
-        };
-        let mut cfg = GenerateConfig::default();
-        cfg.max_new_tokens = if max_tokens < 1 {
-            1
-        } else {
-            max_tokens as usize
-        };
-        cfg.context_len = self.context_len;
-        cfg.print_timing = false;
-        let (stats, text) = run_generation_captured_streaming(
-            &turn_ids,
-            &mut self.fwd,
-            &self.model,
-            &self.tokenizer,
-            &cfg,
-            &mut on_token,
-        )
-        .map_err(|e| e.to_string())?;
-        self.turn_count += 1;
-        let stop_reason = if stats.generated_tokens >= cfg.max_new_tokens {
-            StopReason::MaxTokens
-        } else {
-            StopReason::EndOfTurn
-        };
+        let mut cb = on_token;
+        let (stats, text) = self.generate_inner(prompt, max_tokens, true, Some(&mut cb))?;
         Ok(GenOutput {
             text,
             prompt_tokens: stats.prompt_tokens,
             completion_tokens: stats.generated_tokens,
             prompt_ms: stats.prompt_ms,
             generate_ms: stats.generate_ms,
-            stop_reason,
+            stop_reason: if stats.generated_tokens >= max_tokens.max(1) as usize {
+                StopReason::MaxTokens
+            } else {
+                StopReason::EndOfTurn
+            },
         })
+    }
+
+    fn generate_inner(
+        &mut self,
+        prompt: &str,
+        max_tokens: i32,
+        streaming: bool,
+        on_token: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<(crate::generate::GenerateStats, String), String> {
+        let turn_ids = self.prepare_turn(prompt)?;
+
+        let cfg = GenerateConfig {
+            max_new_tokens: max_tokens.max(1) as usize,
+            context_len: self.context_len,
+            print_timing: false,
+            ..Default::default()
+        };
+
+        if streaming {
+            run_generation_captured_streaming(
+                &turn_ids,
+                &mut self.fwd,
+                &self.model,
+                &self.tokenizer,
+                &cfg,
+                on_token.unwrap(),
+            )
+            .map_err(|e| e.to_string())
+        } else {
+            run_generation_captured(&turn_ids, &mut self.fwd, &self.model, &self.tokenizer, &cfg)
+                .map_err(|e| e.to_string())
+        }
     }
 
     /// Back-compat shim for existing callers: (text, generated_tokens).

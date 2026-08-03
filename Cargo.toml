@@ -2,6 +2,10 @@
 members = [
     "qfz3-engine",
 ]
+# buzz-core and buzz-bench were removed from this workspace on 2026-08-03:
+# they were incomplete/stray local scaffolding, not real members. The real
+# buzz-core lives in the separate buzz-cli repo and is referenced there as
+# a path dependency by qfz3-engine, not as a workspace member here.
 resolver = "2"
 
 [workspace.package]
@@ -9,8 +13,6 @@ edition = "2021"
 authors = ["modhalaali"]
 license = "MIT"
 
-[workspace.dependencies]
-anyhow = "1.0"
-log = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+[profile.release]
+opt-level = 3
+lto = true

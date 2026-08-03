@@ -55,6 +55,7 @@ impl std::error::Error for TokenizerError {}
 #[derive(Debug, Clone)]
 struct VocabEntry {
     text: Vec<u8>, // raw bytes (may not be valid UTF-8 for byte tokens)
+    #[allow(dead_code)]
     score: f32,
     token_type: u32, // 1=normal, 2=unknown, 3=control, 6=byte
     /// True for `<0xNN>` byte-fallback tokens, where `text` is the single

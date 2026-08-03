@@ -160,7 +160,7 @@ impl GgufHeader {
             .get("general.alignment")
             .and_then(|v| v.as_u32())
             .unwrap_or(32) as u64;
-        let data_offset = (pos + alignment - 1) / alignment * alignment;
+        let data_offset = pos.div_ceil(alignment) * alignment;
 
         Ok(GgufHeader {
             version,

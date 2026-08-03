@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod gguf_stress {
-    use qfz3::gguf::{GgufHeader, GgufValue};
+    use qfz3_engine::gguf::{GgufHeader, GgufValue};
 
     // Helper: write a minimal GGUF v2 header with optional metadata + tensors
     struct GgufBuilder {
@@ -511,7 +511,7 @@ mod gguf_stress {
 
     #[test]
     fn gguf_tensor_n_elements() {
-        use qfz3::gguf::TensorInfo;
+        use qfz3_engine::gguf::TensorInfo;
         let ti = TensorInfo {
             name: "test".into(),
             dims: vec![2, 3, 4, 5],
@@ -523,7 +523,7 @@ mod gguf_stress {
 
     #[test]
     fn gguf_tensor_n_elements_1d() {
-        use qfz3::gguf::TensorInfo;
+        use qfz3_engine::gguf::TensorInfo;
         let ti = TensorInfo {
             name: "test".into(),
             dims: vec![4096],
@@ -692,7 +692,7 @@ mod gguf_stress {
 
     #[test]
     fn gguf_tensor_zero_dims() {
-        use qfz3::gguf::TensorInfo;
+        use qfz3_engine::gguf::TensorInfo;
         let ti = TensorInfo {
             name: "empty".into(),
             dims: vec![],
@@ -704,7 +704,7 @@ mod gguf_stress {
 
     #[test]
     fn gguf_tensor_single_dim() {
-        use qfz3::gguf::TensorInfo;
+        use qfz3_engine::gguf::TensorInfo;
         let ti = TensorInfo {
             name: "vec".into(),
             dims: vec![32000],
@@ -716,7 +716,7 @@ mod gguf_stress {
 
     #[test]
     fn gguf_tensor_large_dims() {
-        use qfz3::gguf::TensorInfo;
+        use qfz3_engine::gguf::TensorInfo;
         let ti = TensorInfo {
             name: "big".into(),
             dims: vec![4096, 4096],
@@ -763,7 +763,7 @@ mod gguf_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod tokenizer_stress {
-    use qfz3::tokenizer::{Tokenizer, TOKEN_BOS, TOKEN_EOS, TOKEN_EOT, TOKEN_PAD};
+    use qfz3_engine::tokenizer::{Tokenizer, TOKEN_BOS, TOKEN_EOS, TOKEN_EOT, TOKEN_PAD};
 
     /// Build a realistic-ish tokenizer with 256 byte tokens + some merged tokens
     fn build_stress_tokenizer() -> Tokenizer {
@@ -1069,7 +1069,7 @@ mod tokenizer_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod logits_stress {
-    use qfz3::logits::*;
+    use qfz3_engine::logits::*;
 
     // ── RMS Norm stress ────────────────────────────────────────────────────────
 
@@ -1641,8 +1641,8 @@ mod logits_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod generate_stress {
-    use qfz3::generate::*;
-    use qfz3::tokenizer::Tokenizer;
+    use qfz3_engine::generate::*;
+    use qfz3_engine::tokenizer::Tokenizer;
 
     fn stress_tokenizer() -> Tokenizer {
         let tokens = vec![
@@ -1890,7 +1890,7 @@ mod generate_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod mapper_stress {
-    use qfz3::mapper::*;
+    use qfz3_engine::mapper::*;
 
     #[test]
     fn stress_num_layers_zero() {
@@ -1952,9 +1952,9 @@ mod mapper_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod concurrency_stress {
-    use qfz3::generate::*;
-    use qfz3::logits::*;
-    use qfz3::tokenizer::*;
+    use qfz3_engine::generate::*;
+    use qfz3_engine::logits::*;
+    use qfz3_engine::tokenizer::*;
     use std::sync::Arc;
     use std::thread;
 
@@ -2145,7 +2145,7 @@ mod concurrency_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod ggml_type_stress {
-    use qfz3::ggml_ffi::GgmlType;
+    use qfz3_engine::ggml_ffi::GgmlType;
 
     #[test]
     fn stress_all_known_types() {
@@ -2188,7 +2188,7 @@ mod ggml_type_stress {
 
     #[test]
     fn stress_gguf_value_clone() {
-        use qfz3::gguf::GgufValue;
+        use qfz3_engine::gguf::GgufValue;
         let v = GgufValue::String("test".to_string());
         let v2 = v.clone();
         assert_eq!(v.as_str(), v2.as_str());
@@ -2196,7 +2196,7 @@ mod ggml_type_stress {
 
     #[test]
     fn stress_gguf_value_debug() {
-        use qfz3::gguf::GgufValue;
+        use qfz3_engine::gguf::GgufValue;
         let values = vec![
             GgufValue::U8(42),
             GgufValue::I8(-1),
@@ -2224,8 +2224,8 @@ mod ggml_type_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod fuzz_stress {
-    use qfz3::logits::*;
-    use qfz3::tokenizer::*;
+    use qfz3_engine::logits::*;
+    use qfz3_engine::tokenizer::*;
     use std::collections::HashMap;
 
     /// Build a tokenizer from random-ish input
@@ -2427,8 +2427,8 @@ mod fuzz_stress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod error_stress {
-    use qfz3::logits::{LogitError, SamplingConfig};
-    use qfz3::tokenizer::TokenizerError;
+    use qfz3_engine::logits::{LogitError, SamplingConfig};
+    use qfz3_engine::tokenizer::TokenizerError;
 
     #[test]
     fn stress_logit_error_display() {

@@ -2,8 +2,8 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::process;
 
-use qfz3::engine::Engine;
-use qfz3::gguf::GgufHeader;
+use qfz3_engine::engine::Engine;
+use qfz3_engine::gguf::GgufHeader;
 
 const DEFAULT_MODEL: &str = "ai_playground/qwen2.5-coder-3b-q4_K_M.gguf";
 

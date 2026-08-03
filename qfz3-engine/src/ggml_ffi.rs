@@ -1,5 +1,4 @@
 #![allow(non_camel_case_types)]
-#![allow(non_camel_case_types)]
 // Z.1 — ggml_ffi.rs
 // Single source of truth for all ggml opaque types and FFI declarations.
 // Both loader.rs and graph.rs import from here.
