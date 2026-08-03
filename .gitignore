@@ -6,3 +6,4 @@ vendor/
 ai_playground/llamafile
 *.bak*
 *.png
+nano_keyreg.sh
