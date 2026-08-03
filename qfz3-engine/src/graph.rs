@@ -274,6 +274,13 @@ impl LlamaGraph {
         if backend.is_null() {
             bail!("[Z.1 Graph] ggml_backend_cpu_init failed");
         }
+        // Pinned to physical core count (2 on this i5-4300U), not logical/
+        // hyperthreaded count (4). Benchmarked 2026-08-03: 5-run comparison
+        // showed pinned averaging 8.77 tok/s vs 8.26 tok/s unset (~6% faster,
+        // consistent with published guidance that thread count should match
+        // performance cores, not logical threads).
+        unsafe { ffi::ggml_backend_cpu_set_n_threads(backend, 2) };
+        log::info!("[Z.1 Graph] CPU backend threads pinned to 2 (physical cores)");
         log::info!(
             "[Z.1 Graph] layers={} embd={} heads={}/{} ff={} rot={} freq_base={}",
             hp.n_layer,
