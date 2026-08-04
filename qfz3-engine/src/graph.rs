@@ -122,6 +122,7 @@ impl LlamaHparams {
             },
             freq_base: get_f32(&format!("{}.rope.freq_base", arch), 500000.0),
             rms_norm_eps: get_f32(&format!("{}.attention.layer_norm_rms_epsilon", arch), 1e-5),
+            // [REMEMBER: rope_mode must be 2 (NEOX) for Qwen2 -- Llama uses 0, mixing these silently breaks generation]
             rope_mode: if arch.starts_with("qwen") { 2 } else { 0 },
         }
     }
@@ -279,6 +280,9 @@ impl LlamaGraph {
         // showed pinned averaging 8.77 tok/s vs 8.26 tok/s unset (~6% faster,
         // consistent with published guidance that thread count should match
         // performance cores, not logical threads).
+        // [REMEMBER: pinned to 2 threads after a proper 5-run A/B benchmark showed
+        // ~6-9% faster than the unset default -- a single-run test misleadingly
+        // showed the opposite, don't trust one-shot timing comparisons]
         unsafe { ffi::ggml_backend_cpu_set_n_threads(backend, 2) };
         log::info!("[Z.1 Graph] CPU backend threads pinned to 2 (physical cores)");
         log::info!(
@@ -1128,6 +1132,9 @@ impl LlamaGraph {
             ));
         }
         let tokens: Vec<i32> = token_ids.iter().map(|&t| t as i32).collect();
+        // [REMEMBER: pos must be self.kv.head, not a hardcoded 0 -- hardcoding 0 was
+        // the real root cause of broken multi-turn, correct only by coincidence on
+        // the first turn since kv.head starts at 0 there]
         let pos = self.kv.head as i32;
         self.forward(model, &tokens, pos)
             .map_err(|e| ForwardError::AllocationFailed(e.to_string()))
